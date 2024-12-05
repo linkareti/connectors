@@ -52,6 +52,7 @@
         <module>internal-enrichment/censys</module>
         <module>external-import/arctichub</module>
         <module>external-import/spycloud</module>
+        <module>internal-enrichment/tagger</module>
     </modules>
 
     <profiles>
