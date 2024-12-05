@@ -318,7 +318,7 @@ class ConverterToStix:
             #labels ???
             
             #sighting_of_ref=stix_indicator["id"],
-            #where_sighted_refs=[self.greynoise_identity["id"]],
+            #where_sighted_refs=[self.author.id],
             #external_references=external_reference,
             #object_marking_refs=stix2.TLP_WHITE,
             #            custom_properties={
