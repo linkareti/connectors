@@ -1,0 +1,7 @@
+version: '3.8'
+
+services:
+  opencti-connector-arctichub:
+    build:
+      context: .
+    image: ${repo}/${linkare.project.prefix}/opencti-connector-arctichub-${opencti.version}:${project.version}

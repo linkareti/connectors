@@ -1,0 +1,7 @@
+version: '3.8'
+
+services:
+  opencti-connector-spycloud:
+    build:
+      context: .
+    image: ${repo}/${linkare.project.prefix}/opencti-connector-spycloud-${opencti.version}:${project.version}

@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="ISO-8859-15"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.linkare.maven</groupId>
+        <artifactId>parent</artifactId>
+        <version>1.6.1</version>
+    </parent>
+
+    <groupId>com.linkare.opencti.connectors</groupId>
+    <artifactId>base</artifactId>
+    <version>1.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>OpenCTI-Connectors</name>
+    <description>OpenCTI Connectors</description>
+
+    <scm>
+        <connection>scm:git:https://github.com/linkareti/opencti-connectors.git</connection>
+        <developerConnection>scm:git:https://github.com/linkareti/opencti-connectors.git</developerConnection>
+        <url>https://github.com/linkareti/opencti-connectors.git</url>
+        <tag>HEAD</tag>
+    </scm>
+
+    <distributionManagement>
+        <repository>
+            <id>linkare-releases</id>
+            <name>Linkare Opencti Releases Repository</name>
+            <url>https://nexus.linkare.com/nexus/repository/n3-m2-opencti-releases/</url>
+        </repository>
+        <snapshotRepository>
+            <id>linkare-snap-repo</id>
+            <name>Linkare Opencti Snapshots Repository</name>
+            <url>https://nexus.linkare.com/nexus/repository/n3-m2-opencti-snapshots/</url>
+        </snapshotRepository>
+    </distributionManagement>
+
+    <properties>
+        <repo>docker-ccb.linkare.com</repo>
+        <linkare.project.prefix>opencti-connectors</linkare.project.prefix>
+
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <opencti.version>6.3.10</opencti.version>
+    </properties>
+
+    <modules>
+        <module>external-import/dragos</module>
+        <module>internal-enrichment/censys</module>
+        <module>external-import/arctichub</module>
+        <module>external-import/spycloud</module>
+    </modules>
+
+    <profiles>
+        <profile>
+            <id>activate-docker-build</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+                <file>
+                    <exists>compose.yml</exists>
+                </file>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-resources-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-docker-build-resources</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <configuration>
+                                    
+                                    <resources>
+                                        <resource>
+                                            <directory>.</directory>
+                                            <excludes>
+                                                <exclude>env/**</exclude>
+                                                <exclude>venv/**</exclude>
+                                                <exclude>src/env/**</exclude>
+                                                <exclude>target/**</exclude>
+                                                <exclude>.venv/**</exclude>
+                                                <exclude>.venv/**</exclude>
+                                            </excludes>
+                                            <filtering>false</filtering>
+                                        </resource>
+                                        <resource>
+                                            <directory>.</directory>
+                                            <includes>
+                                                <include>compose.yml</include>
+                                            </includes>
+                                            <filtering>true</filtering>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>build-docker-images</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <workingDirectory>${project.build.directory}</workingDirectory>
+                                    <executable>docker</executable>
+                                    <commandlineArgs>compose -f compose.yml --project-name ${linkare.project.prefix} build --force-rm --no-cache</commandlineArgs>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>push-docker-images-to-nexus</id>
+                                <phase>deploy</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <workingDirectory>${project.build.directory}</workingDirectory>
+                                    <executable>docker</executable>
+                                    <commandlineArgs>compose -f compose.yml push</commandlineArgs>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        
+        </profile>
+    </profiles>
+</project>

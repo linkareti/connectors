@@ -1,0 +1,7 @@
+version: '3.8'
+
+services:
+  opencti-connector-censys:
+    build:
+      context: .
+    image: ${repo}/${linkare.project.prefix}/opencti-connector-censys-${opencti.version}:${project.version}
