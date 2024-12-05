@@ -1,0 +1,3 @@
+pycti==6.3.10
+validators==0.33.0
+censys==2.2.16

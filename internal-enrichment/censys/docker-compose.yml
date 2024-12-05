@@ -1,0 +1,30 @@
+services:
+  connector-censys:
+    image: opencti/connector-censys:6.2.18
+    environment:
+      # OpenCTI platform
+      - OPENCTI_URL=http://localhost
+      - OPENCTI_TOKEN=CHANGEME
+      # Connector identification
+      - CONNECTOR_ID=CHANGEME
+      - CONNECTOR_TYPE=INTERNAL_ENRICHMENT
+      - CONNECTOR_NAME=Censys
+      - CONNECTOR_SCOPE=censys
+      # Connector execution
+      - CONNECTOR_LOG_LEVEL=error
+      - CONNECTOR_AUTO=false
+      # Censys API
+      - CONNECTOR_CENSYS_API_BASE_URL=https://search.censys.io/api
+      - CONNECTOR_CENSYS_API_ID=CHANGEME
+      - CONNECTOR_CENSYS_API_SECRET=CHANGEME
+      - CONNECTOR_CENSYS_MAX_TLP=TLP:AMBER
+
+    restart: always
+    # networks:
+    #   - docker_default
+
+# networks:
+#   default:
+#     external: true
+#     name: docker_default
+
