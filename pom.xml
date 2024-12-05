@@ -20,7 +20,7 @@
         <connection>scm:git:https://github.com/linkareti/connectors.git</connection>
         <developerConnection>scm:git:https://github.com/linkareti/connectors.git</developerConnection>
         <url>https://github.com/linkareti/opencti-connectors.git</url>
-        <tag>HEAD</tag>
+        <tag>rel-1.0.x</tag>
     </scm>
 
     <distributionManagement>
