@@ -1,0 +1,27 @@
+opencti:
+  url: 'http://localhost:PORT'
+  token: 'ChangeMe'
+
+connector:
+  id: 'ChangeMe'
+  type: 'EXTERNAL_IMPORT'
+  name: 'External Import Connector Arctichub'
+  scope: 'ChangeMe'
+  log_level: 'info'
+  duration_period: 'PT24H' # Interval given for scheduler process in ISO-8601 format
+  #============================================#
+  # Optional connector's definition parameters #
+  #============================================#
+  #queue_threshold: 500
+  #run_and_terminate: 'False'
+  #send_to_queue: 'True'
+  #send_to_directory: 'False'
+  #send_to_directory_path: 'ChangeMe'
+  #send_to_directory_retention: 7
+
+connector_arctichub:
+  api_base_url: 'https://cert-be.arcticsecurity.com:9443/api'
+  api_events_path: 'storage/v1/events'
+  api_customers_path: 'config/v1/export/customers'
+  api_events_key: 'ChangeMe'
+  api_customers_key: 'ChangeMe'

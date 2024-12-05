@@ -1,0 +1,28 @@
+type domain:
+- sighting
+- indicator
+- attack-pattern (one for each attack_techniques, still need to validate MITRE ATTACK)
+- relationships with attack-patterns ("relationship_type": "indicates", source indicator, target attack-pattern)
+
+type ip:
+- sighting
+- indicator
+- threat-actor (one for each threat_groups)
+- relationships with threat-actors ("relationship_type": "indicates", source indicator, target threat-actor)
+
+type md5:
+- sighting
+- indicator
+
+type sha1:
+- sighting
+- indicator
+
+type sha256:
+- sighting
+- indicator
+
+report objects...
+labels?
+regions?
+kill_chain_phase?

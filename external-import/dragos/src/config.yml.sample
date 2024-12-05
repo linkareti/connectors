@@ -1,0 +1,30 @@
+opencti:
+  url: 'http://localhost:PORT'
+  token: 'ChangeMe'
+
+connector:
+  id: 'ChangeMe'
+  type: 'EXTERNAL_IMPORT'
+  name: 'Dragos'
+  scope: 'dragos'
+  log_level: 'info'
+  duration_period: 'PT6H' # Interval given for scheduler process in ISO-8601 format
+  #============================================#
+  # Optional connector's definition parameters #
+  #============================================#
+  #queue_threshold: 500
+  #run_and_terminate: 'False'
+  #send_to_queue: 'True'
+  #send_to_directory: 'False'
+  #send_to_directory_path: 'ChangeMe'
+  #send_to_directory_retention: 7
+
+connector_dragos:
+  api_base_url: 'https://portal.dragos.com/api/v1/'
+  api_access_token: 'ChangeMe'
+  api_access_key: 'ChangeMe'
+  start_date: '2024-01-01'
+  requests_per_minute_limit: 30
+  requests_per_week_limit: 250
+  indicators_page_size: 1000
+  reports_page_size: 500
