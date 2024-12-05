@@ -10,7 +10,7 @@
 
     <groupId>com.linkare.opencti.connectors</groupId>
     <artifactId>base</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>OpenCTI-Connectors</name>
@@ -20,7 +20,7 @@
         <connection>scm:git:https://github.com/linkareti/connectors.git</connection>
         <developerConnection>scm:git:https://github.com/linkareti/connectors.git</developerConnection>
         <url>https://github.com/linkareti/opencti-connectors.git</url>
-        <tag>rel-1.0.1</tag>
+        <tag>rel-1.0.x</tag>
     </scm>
 
     <distributionManagement>
