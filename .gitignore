@@ -14,3 +14,4 @@ Pipfile*
 *.crt
 .env
 .pytest_cache
+target
