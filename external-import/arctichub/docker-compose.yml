@@ -12,7 +12,7 @@ services:
       - CONNECTOR_SCOPE=arctichub
       - CONNECTOR_LOG_LEVEL=error
       - CONNECTOR_DURATION_PERIOD=PT24H # ISO8601 format in String, start with 'P...' for Period
-
+      - CONNECTOR_UPDATE_EXISTING_DATA=false
       # Connector's definition parameters OPTIONAL
       # - CONNECTOR_QUEUE_THRESHOLD=500 # Default 500Mo, Float accepted
       # - CONNECTOR_RUN_AND_TERMINATE=False # Default False, True run connector once
@@ -22,11 +22,13 @@ services:
       # - CONNECTOR_SEND_TO_DIRECTORY_RETENTION=7 # Default 7, in days
 
       # Connector's custom execution parameters
-      - CONNECTOR_ARCTICHUB_API_BASE_URL=CHANGEME
-      - CONNECTOR_ARCTICHUB_API_EVENTS_PATH=CHANGEME
-      - CONNECTOR_ARCTICHUB_API_CUSTOMERS_PATH=CHANGEME
+      - CONNECTOR_ARCTICHUB_API_BASE_URL='https://cert-be.arcticsecurity.com:9443/api'
+      - CONNECTOR_ARCTICHUB_API_EVENTS_PATH='storage/v1/events'
+      - CONNECTOR_ARCTICHUB_API_CUSTOMERS_PATH='config/v1/export/customers'
       - CONNECTOR_ARCTICHUB_API_EVENTS_KEY=CHANGEME
       - CONNECTOR_ARCTICHUB_API_CUSTOMERS_KEY=CHANGEME
+      - CONNECTOR_IP_CIDR_EXPANSION=false
+      - CONNECTOR_IP_CIDR_EXPANSION_MAX_HOST_SIZE=8192
 
       # Add proxy parameters below if needed
       # - HTTP_PROXY=CHANGEME

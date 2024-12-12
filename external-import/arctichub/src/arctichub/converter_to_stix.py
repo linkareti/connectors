@@ -18,6 +18,8 @@ from pycti import (
     Infrastructure,
 )
 
+from .config_variables import ConfigConnector
+
 from pycti.utils.constants import LocationTypes
 
 class ConverterToStix:
@@ -28,8 +30,9 @@ class ConverterToStix:
     - generate_id() for each entity from OpenCTI pycti library except observables to create
     """
 
-    def __init__(self, helper: OpenCTIConnectorHelper):
+    def __init__(self, helper: OpenCTIConnectorHelper, config: ConfigConnector):
         self.helper = helper
+        self.config = config
         self.author = self.create_author()
     
     def create_identity(
@@ -39,7 +42,6 @@ class ConverterToStix:
             description: str = None, 
             created_by_ref: stix2.Identity = None,
             contact_information: list = None,
-
             ) -> stix2.Identity:
         """
         Create an identity.
@@ -51,10 +53,10 @@ class ConverterToStix:
             created_by_ref=created_by_ref,
             identity_class=identity_class,
             description=description,
-            contact_information=contact_information
+            contact_information=contact_information,
         )
 
-        return identity    
+        return identity
 
     def create_author(self) -> stix2.Identity:
 
@@ -74,7 +76,7 @@ class ConverterToStix:
             self, 
             name: str, 
             description: str,
-            contact_information: list = None
+            contact_information: list = None,
             ) -> stix2.Identity:
         """
         Create an organization.
@@ -85,7 +87,7 @@ class ConverterToStix:
             identity_class="organization",
             description=description,
             created_by_ref=self.author,
-            contact_information=contact_information
+            contact_information=contact_information,
             )
 
         return organization
@@ -111,7 +113,6 @@ class ConverterToStix:
         Create an infraestructure.
         :return: Infraestructure in Stix2 object
         """
-        #TODO infeactructure type?
         infraestructure = stix2.Infrastructure(
             id=Infrastructure.generate_id(name),
             name=name,
@@ -215,7 +216,7 @@ class ConverterToStix:
             return stix_domain_name
         else:
             self.helper.connector_logger.error(
-                "This observable value is not a valid IPv4 or IPv6 address nor DomainName: ",
+                "[CONNECTOR] This observable value is not a valid IPv4 or IPv6 address nor DomainName: ",
                 {"value": value},
             )
 
@@ -293,7 +294,7 @@ class ConverterToStix:
         
         return stix_autonomous_system
 
-    def process_customer(self, data: dict) -> List[ _DomainObject | _RelationshipObject | _Observable ]:
+    def process_customer(self, customer_data: dict) -> List[ _DomainObject | _RelationshipObject | _Observable ]:
         """
         Process customer data to extract stix2 objects
         
@@ -312,38 +313,44 @@ class ConverterToStix:
             - Only organizations like EDPNET have this value set
             - This is if the organization has the whole ASN create “stix2.AutonomousSystem and relationship with identity”
 
-        
+    
+        :param data: Customer data dictionary
+        :param ips_to_expand: Optional list of specific IPs or IP ranges to expand
         :return: List of STIX2 objects
         """
 
         stix_objects = []
 
         # we want to ignore organizations with no label "organization type"
-        if 'data' not in data or 'labels' not in data['data']:
+        if 'data' not in customer_data or 'labels' not in customer_data['data']:
             return stix_objects
         
-        data_content = data['data']
-        customer_name = data_content.get('name')
-        labels = data_content['labels']
+        data = customer_data['data']
+        customer_name = data.get('name')
+        labels = data['labels']
+        meta = customer_data['meta']
 
-        print(f"Customer {customer_name} have {len(stix_objects)} objects")
-
-        self.helper.connector_logger.info("Processing customer ", {"customer": customer_name})
+        self.helper.connector_logger.info("[CONNECTOR] Processing customer ", {"customer": customer_name})
 
         organization_type = labels.get('organization type', None)
         if not organization_type:
-            self.helper.connector_logger.info("Ignoring customer without organization type", {"customer": customer_name})
+            self.helper.connector_logger.info("[CONNECTOR] Ignoring customer without organization type", {"customer": customer_name})
             return stix_objects
 
         #create the organization for the customer
         customer = self.create_organization(
             name=customer_name,
             description=labels.get('notes', None),
-            contact_information=data_content.get('address book', None)
-            )
+            contact_information=data.get('address book', None),
+            # custom_properties={
+            #     "arctichub_customer_meta_created": meta.get('created', None),
+            #     "arctichub_customer_meta_author": meta.get('author', None),
+            #     "arctichub_customer_meta_version": meta.get('version', None),
+            #     "arctichub_customer_meta_timestamp": meta.get('timestamp', None),
+            # }
+        )
 
         stix_objects.append(customer)
-
 
         #create the infrastructure based on organization_type
         infrastructure = self.create_infrastructure(
@@ -357,15 +364,15 @@ class ConverterToStix:
         stix_objects.extend(sectors)
 
         # hadle domains
-        domains = self.handle_domains(data_content, customer)
+        domains = self.handle_domains(data, customer)
         stix_objects.extend(domains)
 
         # hadle ips
-        ips = self.handle_ips(data_content, customer)
+        ips = self.handle_ips(data, customer)
         stix_objects.extend(ips)
 
         # hadle autonomous systems
-        autonomous_systems = self.handle_autonomous_systems(data_content, customer)
+        autonomous_systems = self.handle_autonomous_systems(data, customer)
         stix_objects.extend(autonomous_systems)
 
         return stix_objects
@@ -415,11 +422,11 @@ class ConverterToStix:
 
         return stix_sectors
 
-    def handle_domains(self, data_content: dict, customer: stix2.Identity):
+    def handle_domains(self, data: dict, customer: stix2.Identity):
 
         stix_domains = []
     
-        for domain_name_root in data_content.get('domain name', []):
+        for domain_name_root in data.get('domain name', []):
             for domain_name in domain_name_root.get('domain name', []):
                 domain_name_observable = self.create_obs(value=domain_name)
                 if domain_name_observable:
@@ -434,21 +441,23 @@ class ConverterToStix:
                     stix_domains.append(domain_relationship)
                 else:
                     self.helper.connector_logger.warning(
-                        "Customer with unsupported domain name value",
+                        "[CONNECTOR] Customer with unsupported domain name value",
                         {"customer": customer.id, "domain_name": domain_name}
                     )
 
         return stix_domains
 
-    def handle_ips(self, data_content: dict, customer: stix2.Identity):
+    def handle_ips(self, data: dict, customer: stix2.Identity):
 
         stix_ips = []
 
-        for ip_range_root in data_content.get('ip range', []):
+        for ip_range_root in data.get('ip range', []):
 
             resolved_ip_range = self.resolve_ip_ranges(ip_range_root.get('ip range', []))
 
-            for ip in resolved_ip_range:
+            ip_ranges = resolved_ip_range
+
+            for ip in ip_ranges:
                 ip_address = self.create_obs(value=ip)
                 if ip_address:
                     stix_ips.append(ip_address)
@@ -462,18 +471,18 @@ class ConverterToStix:
                     stix_ips.append(ip_relationship)
                 else:
                     self.helper.connector_logger.warning(
-                        "Customer with unsupported ip value",
+                        "[CONNECTOR] Customer with unsupported ip value",
                         {"customer": customer.id, "ip": ip}
                     )
 
         return stix_ips
 
-    def handle_autonomous_systems(self, data_content: dict, customer: stix2.Identity):
+    def handle_autonomous_systems(self, data: dict, customer: stix2.Identity):
         
         stix_as = []
         
         # If there are ASNs present, create the AutonomousSystem objects
-        for asn in data_content.get('asn', []):
+        for asn in data.get('asn', []):
             autonomous_system = self.create_autonomous_system(
                 number=asn,
                 name=f"ASN {asn}"
@@ -491,36 +500,38 @@ class ConverterToStix:
 
         return stix_as
 
-    # Function to resolve CIDR to IP addresses
-    def resolve_ip_ranges(ip_ranges):
-        """
-        Function to resolve CIDR to IP addresses
-        """
-        
-        all_ips = []
-        
-        for cidr in ip_ranges:
-            network = ipaddress.ip_network(cidr, strict=False)
-            for ip in network.hosts():
-                all_ips.append(str(ip))
-        
-        return all_ips
-
-
     def resolve_cidr(self, cidr):
         """
         # Resolve a CIDR range into individual IPs
         """
-        self.helper.connector_logger.info("Resolving cidr ip range", {"cidr": cidr})
+        self.helper.connector_logger.info("[CONNECTOR] Resolving cidr ip range", {"cidr": cidr})
+
+        is_ipv6 = validators.ipv6(cidr)
+
+        if is_ipv6:
+            self.helper.connector_logger.info("[CONNECTOR] We don't have the time or space to expand IPv6 ranges, using cidr format.", {"cidr": cidr})
+            return [cidr]
+        
+        if not self.config.ip_cidr_expansion:
+            self.helper.connector_logger.info("[CONNECTOR] IP_CIDR_EXPANSION is set to false. using cidr format only.", {"cidr": cidr})
+            return [cidr]
 
         network = ipaddress.ip_network(cidr, strict=False)
-        return [str(ip) for ip in network.hosts()]
+
+        total_hosts = network.num_addresses - 2  # Subtract network and broadcast addresses
+
+        if total_hosts > self.config.ip_cidr_expansion_max_host_size:
+            print (f"Ignoring cidr {cidr} to many ips... {total_hosts}")
+            self.helper.connector_logger.info("[CONNECTOR] cidr expansion exceeds max configuration value.", {"cidr": cidr})
+            return [cidr]
+        
+        return [cidr] + [str(ip) for ip in network.hosts()]
 
     def expand_ip_range(self, ip_range):
         """
         # Resolve ip range interval to individual IPs
         """
-        self.helper.connector_logger.info("Expanding ip range interval", {"ip_range": ip_range})
+        self.helper.connector_logger.info("[CONNECTOR] Expanding ip range interval", {"ip_range": ip_range})
         
         start_ip, end_ip = ip_range.split('-')
         
@@ -536,24 +547,30 @@ class ConverterToStix:
 
         return ip_list
 
-    # Main function to resolve all IP ranges
-    def resolve_ip_ranges(self, ip_ranges):
+    def resolve_ip_ranges(self, ip_ranges) -> List[str]:
         all_ips = []
         
-        # for ip_range in ip_ranges:
-        #     if "/" in ip_range:  # CIDR format
-        #         all_ips.extend(self.resolve_cidr(ip_range))
-        #     elif "-" in ip_range:  # Start-end range
-        #         all_ips.extend(self.expand_ip_range(ip_range))
-        #     else:  # Single IP
-        #         all_ips.append(ip_range)
-        
         for ip_range in ip_ranges:
-            if "-" in ip_range:  # Start-end range
+            if "/" in ip_range:  # CIDR notation
+                all_ips.extend(self.resolve_cidr(ip_range))
+            elif "-" in ip_range:  # IP range notation
                 all_ips.extend(self.expand_ip_range(ip_range))
-            else:
+            else: # assuming single ip
                 all_ips.append(ip_range)
 
         return all_ips
 
 
+def get_first_last_ip(ip_input):
+    if '/' in ip_input:  # CIDR notation
+        network = ipaddress.ip_network(ip_input, strict=False)
+        return [str(network.network_address), str(network.broadcast_address)]
+    elif '-' in ip_input:  # IP range notation
+        start_ip, end_ip = ip_input.split('-')
+        
+        start_ip_obj = ipaddress.ip_address(start_ip.strip())
+        end_ip_obj = ipaddress.ip_address(end_ip.strip())
+        
+        return [str(start_ip_obj), str(end_ip_obj)]
+    else:
+        return [ip_input]

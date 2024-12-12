@@ -1,5 +1,7 @@
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
+
+from typing import Dict, List, Optional
 
 from pycti import OpenCTIConnectorHelper
 
@@ -53,7 +55,7 @@ class ConnectorArctichub:
         self.config = ConfigConnector()
         self.helper = OpenCTIConnectorHelper(self.config.load)
         self.client = ConnectorClient(self.helper, self.config)
-        self.converter_to_stix = ConverterToStix(self.helper)
+        self.converter_to_stix = ConverterToStix(self.helper, self.config)
 
     def process_message(self) -> None:
         """
@@ -96,7 +98,6 @@ class ConnectorArctichub:
                 {"connector_name": self.helper.connect_name},
             )
 
-            PAGE_SIZE = 1
 
             # Fetch all customers
             all_customers = self.client.get_customers()
@@ -108,42 +109,42 @@ class ConnectorArctichub:
             self.helper.connector_logger.info(
                 "[CONNECTOR] Total customers to be processed",
                 {
-                    "total_customers": total_customers,
-                    "page_size": PAGE_SIZE
+                    "total_customers": total_customers
                 }
             )
+
+            create_organization = is_first_run
             
-            for i in range(0, len(all_customers), PAGE_SIZE):
-                # Get current page of customers
-                page = all_customers[i:i+PAGE_SIZE]
-                
+            for customer_data in all_customers:
+
                 # Collect and transform this page
                 stix_objects = []
 
-                if is_first_run and i == 0:
+                if create_organization:
                     organization = self.converter_to_stix.create_author()
                     stix_objects.append(organization)
                     self.helper.connector_logger.info(
                        "[CONNECTOR] Creating organization in the first run...",
                         {"otganization": organization},
-            )
+                    )
+                    create_organization = False
 
-                for customer_data in page:
-                    paged_stix_objects = self.converter_to_stix.process_customer(customer_data)
-                    stix_objects.extend(paged_stix_objects)
+                paged_stix_objects = self.converter_to_stix.process_customer(customer_data)
+                stix_objects.extend(paged_stix_objects)
                 
                 # Send this page to the platform
                 if stix_objects:
                     stix_objects_bundle = self.helper.stix2_create_bundle(stix_objects)
                     bundles_sent = self.helper.send_stix2_bundle(
-                        stix_objects_bundle, work_id=work_id
+                        stix_objects_bundle,
+                        update=self.config.update_existing_data,
+                        work_id=work_id
                     )
 
-                    total_processed += len(page)
+                    total_processed += 1
                     self.helper.connector_logger.info(
                         "Sending STIX objects to OpenCTI...",
                         {
-                            "page_size": len(page),
                             "total_processed": total_processed,
                             "total_customers": total_customers,
                             "bundles_sent": str(len(bundles_sent))
@@ -153,9 +154,8 @@ class ConnectorArctichub:
             # Store the current timestamp as a last run of the connector
             current_state = self.helper.get_state() or {}
             current_state_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
-            last_run_datetime = datetime.utcfromtimestamp(current_timestamp).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            last_run_datetime = datetime.fromtimestamp(current_timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            
             current_state["last_run"] = current_state_datetime
             self.helper.set_state(current_state)
 
@@ -176,7 +176,7 @@ class ConnectorArctichub:
             sys.exit(0)
         except Exception as err:
             self.helper.connector_logger.error(str(err))
-
+    
     def run(self) -> None:
         """
         Run the main process encapsulated in a scheduler

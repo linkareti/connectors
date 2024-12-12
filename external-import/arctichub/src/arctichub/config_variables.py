@@ -42,6 +42,12 @@ class ConfigConnector:
             self.load,
         )
 
+        self.update_existing_data = get_config_variable(
+            "CONNECTOR_UPDATE_EXISTING_DATA",
+            ["connector", "update_existing_data"],
+            self.load,
+        )
+
         # Connector extra parameters
         self.api_base_url = get_config_variable(
             "CONNECTOR_ARCTICHUB_API_BASE_URL",
@@ -71,4 +77,17 @@ class ConfigConnector:
             "CONNECTOR_ARCTICHUB_API_CUSTOMERS_KEY",
             ["connector_arctichub", "api_customers_key"],
             self.load,
+        )
+
+        self.ip_cidr_expansion = get_config_variable(
+            "CONNECTOR_IP_CIDR_EXPANSION",
+            ["connector_arctichub", "ip_cidr_expansion"],
+            self.load,
+        )
+
+        self.ip_cidr_expansion_max_host_size = get_config_variable(
+            "CONNECTOR_IP_CIDR_EXPANSION_MAX_HOST_SIZE",
+            ["connector_arctichub", "ip_cidr_expansion_max_host_size"],
+            self.load,
+            isNumber=True,
         )
