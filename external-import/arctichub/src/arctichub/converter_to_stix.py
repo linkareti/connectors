@@ -518,6 +518,10 @@ class ConverterToStix:
 
         network = ipaddress.ip_network(cidr, strict=False)
 
+        #TODO maybe filter private ips?
+        #is_network_private = network.is_private    
+        #private_hosts = [str(ip) for ip in network.hosts() if ip.is_private]
+    
         total_hosts = network.num_addresses - 2  # Subtract network and broadcast addresses
 
         if total_hosts > self.config.ip_cidr_expansion_max_host_size:
