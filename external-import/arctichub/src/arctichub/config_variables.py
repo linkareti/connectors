@@ -59,12 +59,14 @@ class ConfigConnector:
             "CONNECTOR_ARCTICHUB_API_EVENTS_PATH",
             ["connector_arctichub", "api_events_path"],
             self.load,
+            default="storage/v1/events",
         )
 
         self.api_customers_path = get_config_variable(
             "CONNECTOR_ARCTICHUB_API_CUSTOMERS_PATH",
             ["connector_arctichub", "api_customers_path"],
             self.load,
+            default="config/v1/customers",
         )
 
         self.api_events_key = get_config_variable(
@@ -83,11 +85,29 @@ class ConfigConnector:
             "CONNECTOR_IP_CIDR_EXPANSION",
             ["connector_arctichub", "ip_cidr_expansion"],
             self.load,
+            default=False,
+
         )
 
         self.ip_cidr_expansion_max_host_size = get_config_variable(
             "CONNECTOR_IP_CIDR_EXPANSION_MAX_HOST_SIZE",
             ["connector_arctichub", "ip_cidr_expansion_max_host_size"],
             self.load,
+            default=65536,
             isNumber=True,
         )
+
+        self.ip_cidr_expansion_private_networks = get_config_variable(
+            "CONNECTOR_IP_CIDR_EXPANSION_PRIVATE_NETWORKS",
+            ["connector_arctichub", "ip_cidr_expansion_private_networks"],
+            self.load,
+            default=False,
+        )
+
+        self.customers_ignored_names = get_config_variable(
+            "CUSTOMER_IGNORED_NAMES",
+            ["connector_arctichub", "customers_ignored_names"],
+            self.load,
+        )
+
+
