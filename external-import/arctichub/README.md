@@ -65,10 +65,17 @@ Below are the parameters you'll need to set for running the connector properly:
 
 Below are the parameters you'll need to set for the connector:
 
-| Parameter    | config.yml   | Docker environment variable | Default | Mandatory | Description |
-|--------------|--------------|-----------------------------|---------|-----------|-------------|
-| API base URL | api_base_url |                             |         | Yes       |             |
-| API key      | api_key      |                             |         | Yes       |             |
+| Parameter                          | config.yml                         | Docker environment variable                    | Default             | Mandatory | Description                                                                                                                                                                             |
+|------------------------------------|------------------------------------|------------------------------------------------|---------------------|-----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| API base URL                       | api_base_url                       | `CONNECTOR_ARCTICHUB_API_BASE_URL`             |                     | Yes       | The base URL of the API that the connector will interact with. This should include the protocol (e.g., https://somedomain.arcticsecurity.com/api).                                      |
+| API events path                    | api_events_path                    | `CONNECTOR_ARCTICHUB_API_EVENTS_PATH`          | storage/v1/events   | Yes       | The path to the API endpoint for retrieving event data. This path is appended to the base URL.                                                                                          |
+| API customers path                 | api_customers_path                 | `CONNECTOR_ARCTICHUB_API_CUSTOMERS_PATH`       | config/v1/customers | Yes       | The path to the API endpoint for accessing customer data. This is appended to the base URL.                                                                                             |
+| API events key                     | api_events_key                     | `CONNECTOR_ARCTICHUB_API_EVENTS_KEY`           |                     | Yes       | 	The API key or token used to authenticate requests for event data from the API.                                                                                                        |
+| API customers key                  | api_customers_key                  | `CONNECTOR_ARCTICHUB_API_CUSTOMERS_KEY`        |                     | Yes       | 	The API key or token used to authenticate requests for customer data from the API.                                                                                                     |
+| IP CIDR expansion                  | ip_cidr_expansion                  | `CONNECTOR_IP_CIDR_EXPANSION`                  | False               | Yes       | 	A boolean flag indicating whether IP CIDR expansion is enabled. When enabled, it allows for generating expanded ranges of IP addresses.                                                |
+| IP CIDR expansion max host size    | ip_cidr_expansion_max_host_size    | `CONNECTOR_IP_CIDR_EXPANSION_MAX_HOST_SIZE`    | 65536               | Yes       | 	Defines the maximum number of hosts allowed when expanding an IP CIDR block. This value limits the range of IP addresses to prevent overly large expansions.                           |
+| IP CIDR expansion private networks | ip_cidr_expansion_private_networks | `CONNECTOR_IP_CIDR_EXPANSION_PRIVATE_NETWORKS` | False               | Yes       | A boolean flag that determines if private IP networks should be included in the CIDR expansion. When enabled, private IP ranges (e.g., 10.0.0.0/8) will be considered in the expansion. |
+| Customers ignored names            | customers_ignored_names            | `CUSTOMERS_IGNORED_NAMES`                      |                     | Yes       | 	A list of customer names that should be ignored by the connector. This can be used to exclude certain customers from processing.                                                       |
 
 ## Deployment
 
