@@ -30,7 +30,7 @@ services:
       - CONNECTOR_IP_CIDR_EXPANSION=false
       - CONNECTOR_IP_CIDR_EXPANSION_MAX_HOST_SIZE=8192
       - CONNECTOR_IP_CIDR_EXPANSION_PRIVATE_NETWORKS=false
-      - CUSTOMERS_IGNORED_NAMES="Siebe test sync template"
+      - CUSTOMERS_IGNORED_NAMES=".*test sync.*,.*sync test.*"
 
       # Add proxy parameters below if needed
       # - HTTP_PROXY=CHANGEME

@@ -320,15 +320,10 @@ class ConverterToStix:
         """
 
         stix_objects = []
-
-        # we want to ignore organizations with no label "organization type"
-        if 'data' not in customer_data or 'labels' not in customer_data['data']:
-            return stix_objects
         
         data = customer_data['data']
         customer_name = data.get('name')
         labels = data['labels']
-        meta = customer_data['meta']
 
         self.helper.connector_logger.info("[CONNECTOR] Processing customer ", {"customer": customer_name})
 
@@ -342,12 +337,6 @@ class ConverterToStix:
             name=customer_name,
             description=labels.get('notes', None),
             contact_information=data.get('address book', None),
-            # custom_properties={
-            #     "arctichub_customer_meta_created": meta.get('created', None),
-            #     "arctichub_customer_meta_author": meta.get('author', None),
-            #     "arctichub_customer_meta_version": meta.get('version', None),
-            #     "arctichub_customer_meta_timestamp": meta.get('timestamp', None),
-            # }
         )
 
         stix_objects.append(customer)

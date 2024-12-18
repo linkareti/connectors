@@ -30,4 +30,5 @@ connector_arctichub:
   ip_cidr_expansion_max_host_size: 8192
   ip_cidr_expansion_private_networks: false
   customers_ignored_names: 
-    - "Siebe test sync template"
+    - '.*test sync.*'
+    - '.*sync test.*'

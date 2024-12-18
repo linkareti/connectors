@@ -105,9 +105,12 @@ class ConfigConnector:
         )
 
         self.customers_ignored_names = get_config_variable(
-            "CUSTOMER_IGNORED_NAMES",
+            "CUSTOMERS_IGNORED_NAMES",
             ["connector_arctichub", "customers_ignored_names"],
             self.load,
         )
-
-
+        
+        if isinstance(self.customers_ignored_names, str):
+            self.customers_ignored_names = [name.strip() for name in self.customers_ignored_names.split(',') if name.strip()]
+        elif not isinstance(self.customers_ignored_names, list):
+            self.customers_ignored_names = []

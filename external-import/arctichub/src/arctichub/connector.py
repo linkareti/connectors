@@ -1,7 +1,7 @@
 import sys
 from datetime import datetime, timezone
 
-from typing import Dict, List, Optional
+import re
 
 from pycti import OpenCTIConnectorHelper
 
@@ -113,24 +113,14 @@ class ConnectorArctichub:
                 }
             )
 
-            # Prepare the list of ignored customer names
-            ignored_customer_names = self.config.customers_ignored_names or []
-            
             create_organization = is_first_run
             
             for customer_data in all_customers:
-                # Check if customer name is in the ignored names list
-                customer_name = customer_data.get('name', '')
-                if customer_name in ignored_customer_names:
-                    self.helper.connector_logger.info(
-                        "[CONNECTOR] Skipping ignored customer",
-                        {
-                            "customer_name": customer_name
-                        }
-                    )
+
+                if not self.is_customer_valid(customer_data):
                     total_ignored += 1
                     continue
-
+                
                 # Collect and transform this page
                 stix_objects = []
 
@@ -192,6 +182,49 @@ class ConnectorArctichub:
             sys.exit(0)
         except Exception as err:
             self.helper.connector_logger.error(str(err))
+    
+    def is_customer_valid(self, customer_data: dict) -> bool:
+        """
+        Validate if a customer should be processed based on various criteria
+        
+        :param customer_data: Complete customer data dictionary
+        :return: Boolean indicating if customer should be processed
+        """
+        # Check if customer data is valid
+        if 'data' not in customer_data or 'labels' not in customer_data['data']:
+            self.helper.connector_logger.info(
+                "[CONNECTOR] Ignoring customer with invalid data structure", 
+                {"customer_data": customer_data}
+            )
+            return False
+
+        data = customer_data['data']
+        customer_name = data.get('name', 'Unknown')
+        labels = data['labels']
+
+        # Check if customer name matches any regex pattern in ignored names list
+        if self.config.customers_ignored_names:
+            for ignored_pattern in self.config.customers_ignored_names:
+                if re.match(ignored_pattern, customer_name, re.IGNORECASE):
+                    self.helper.connector_logger.info(
+                        "[CONNECTOR] Ignoring customer by name pattern", 
+                        {
+                            "customer": customer_name, 
+                            "ignored_pattern": ignored_pattern
+                        }
+                    )
+                    return False
+
+        # Check for organization type
+        organization_type = labels.get('organization type', None)
+        if not organization_type:
+            self.helper.connector_logger.info(
+                "[CONNECTOR] Ignoring customer without organization type", 
+                {"customer": customer_name}
+            )
+            return False
+
+        return True
     
     def run(self) -> None:
         """
