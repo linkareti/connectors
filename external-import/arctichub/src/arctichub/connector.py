@@ -98,13 +98,13 @@ class ConnectorArctichub:
                 {"connector_name": self.helper.connect_name},
             )
 
-
             # Fetch all customers
             all_customers = self.client.get_customers()
 
             # Process customers in "pages"
             total_processed = 0
             total_customers = len(all_customers)
+            total_ignored = 0
             
             self.helper.connector_logger.info(
                 "[CONNECTOR] Total customers to be processed",
@@ -113,9 +113,23 @@ class ConnectorArctichub:
                 }
             )
 
+            # Prepare the list of ignored customer names
+            ignored_customer_names = self.config.customers_ignored_names or []
+            
             create_organization = is_first_run
             
             for customer_data in all_customers:
+                # Check if customer name is in the ignored names list
+                customer_name = customer_data.get('name', '')
+                if customer_name in ignored_customer_names:
+                    self.helper.connector_logger.info(
+                        "[CONNECTOR] Skipping ignored customer",
+                        {
+                            "customer_name": customer_name
+                        }
+                    )
+                    total_ignored += 1
+                    continue
 
                 # Collect and transform this page
                 stix_objects = []
@@ -147,6 +161,7 @@ class ConnectorArctichub:
                         {
                             "total_processed": total_processed,
                             "total_customers": total_customers,
+                            "total_ignored": total_ignored,
                             "bundles_sent": str(len(bundles_sent))
                         },
                     )
@@ -162,6 +177,7 @@ class ConnectorArctichub:
             message = (
                 f"{self.helper.connect_name} connector successfully run, "
                 f"processed {total_processed} customers out of {total_customers}, "
+                f"ignored {total_ignored} customers, "
                 f"storing last_run as {last_run_datetime}"
             )
 

@@ -502,7 +502,7 @@ class ConverterToStix:
 
     def resolve_cidr(self, cidr):
         """
-        # Resolve a CIDR range into individual IPs
+        Resolve a CIDR range into individual IPs, with optional private network filtering
         """
         self.helper.connector_logger.info("[CONNECTOR] Resolving cidr ip range", {"cidr": cidr})
 
@@ -511,25 +511,28 @@ class ConverterToStix:
         if is_ipv6:
             self.helper.connector_logger.info("[CONNECTOR] We don't have the time or space to expand IPv6 ranges, using cidr format.", {"cidr": cidr})
             return [cidr]
-        
+
         if not self.config.ip_cidr_expansion:
             self.helper.connector_logger.info("[CONNECTOR] IP_CIDR_EXPANSION is set to false. using cidr format only.", {"cidr": cidr})
             return [cidr]
 
         network = ipaddress.ip_network(cidr, strict=False)
 
-        #TODO maybe filter private ips?
-        #is_network_private = network.is_private    
-        #private_hosts = [str(ip) for ip in network.hosts() if ip.is_private]
-    
-        total_hosts = network.num_addresses - 2  # Subtract network and broadcast addresses
+        # Check if private networks should be filtered
+        if self.config.ip_cidr_expansion_private_networks:
+            # Filter out private hosts
+            filtered_hosts = [str(ip) for ip in network.hosts() if not ip.is_private]
+        else:
+            # Include all hosts
+            filtered_hosts = [str(ip) for ip in network.hosts()]
 
+        total_hosts = len(filtered_hosts)
+    
         if total_hosts > self.config.ip_cidr_expansion_max_host_size:
-            print (f"Ignoring cidr {cidr} to many ips... {total_hosts}")
-            self.helper.connector_logger.info("[CONNECTOR] cidr expansion exceeds max configuration value.", {"cidr": cidr})
+            self.helper.connector_logger.info("[CONNECTOR] CIDR expansion exceeds max configuration value.", {"cidr": cidr, "total_hosts": total_hosts})
             return [cidr]
-        
-        return [cidr] + [str(ip) for ip in network.hosts()]
+
+        return [cidr] + filtered_hosts
 
     def expand_ip_range(self, ip_range):
         """
