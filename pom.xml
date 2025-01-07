@@ -52,7 +52,7 @@
         <module>internal-enrichment/censys</module>
         <module>external-import/arctichub</module>
         <module>external-import/spycloud</module>
-        <module>internal-enrichment/tagger</module>
+        <module>external-import/group-ib</module>
     </modules>
 
     <profiles>
@@ -77,7 +77,7 @@
                                     <goal>copy-resources</goal>
                                 </goals>
                                 <configuration>
-                                    
+                                    <outputDirectory>${project.build.directory}</outputDirectory>
                                     <resources>
                                         <resource>
                                             <directory>.</directory>

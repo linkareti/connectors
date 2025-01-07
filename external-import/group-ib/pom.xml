@@ -11,9 +11,9 @@
 
     
     <packaging>pom</packaging>
-    <artifactId>opencti-connector-tagger</artifactId>
+    <artifactId>opencti-connector-groupib</artifactId>
 
-    <name>OpenCTI-Connectors-tagger</name>
-    <description>OpenCTI Connector tagger</description>
+    <name>OpenCTI-Connectors-groupib</name>
+    <description>OpenCTI Connector GroupIB</description>
 
 </project>

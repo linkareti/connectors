@@ -1,7 +1,0 @@
-version: '3.8'
-
-services:
-  opencti-connector-tagger:
-    build:
-      context: .
-    image: ${repo}/${linkare.project.prefix}/opencti-connector-tagger-${opencti.version}:${project.version}
