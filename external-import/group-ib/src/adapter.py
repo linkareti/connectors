@@ -1006,7 +1006,7 @@ class DataToSTIXAdapter:
                     _url_stix_objects.append(url)
 
                 else:
-                self.helper.log_warning(f"Wrong format of url: {_url}")
+                    self.helper.log_warning(f"Wrong format of url: {_url}")
 
             if _ip:
                 is_valid_ipv4 = validators.ipv4(_ip)
