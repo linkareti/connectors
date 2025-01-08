@@ -930,7 +930,7 @@ class DataToSTIXAdapter:
                         self.helper.log_warning(f"Wrong format of url: {_url}")
                 if _ips:
                     for _ip in _ips:
-                        is_valid_ipv4 = validators.ipv4(_url)
+                        is_valid_ipv4 = validators.ipv4(_ip)
 
                         if is_valid_ipv4:
 
@@ -961,57 +961,73 @@ class DataToSTIXAdapter:
 
             domain = None
             if _domain:
-                domain = self.generate_stix_domain(_domain)
-                domain.is_ioc = domain_is_ioc
-                domain.set_valid_from(valid_from)
-                domain.set_valid_until(valid_until)
-                domain.generate_stix_objects()
+                is_valid_domain = validators.ipv4(_domain)
 
-                self._generate_relations(domain, related_objects, is_ioc=domain_is_ioc)
+                if is_valid_domain:
+                    domain = self.generate_stix_domain(_domain)
+                    domain.is_ioc = domain_is_ioc
+                    domain.set_valid_from(valid_from)
+                    domain.set_valid_until(valid_until)
+                    domain.generate_stix_objects()
 
-                domain.add_relationships_to_stix_objects()
+                    self._generate_relations(domain, related_objects, is_ioc=domain_is_ioc)
 
-                _domain_stix_objects.append(domain)
+                    domain.add_relationships_to_stix_objects()
 
+                    _domain_stix_objects.append(domain)
+                else:
+                    self.helper.log_warning(f"Wrong format of domain: {_domain}")
             url = None
             if _url:
-                url = self.generate_stix_url(_url)
-                url.is_ioc = url_is_ioc
-                url.set_valid_from(valid_from)
-                url.set_valid_until(valid_until)
-                link_id = "NoId"
-                link_url = _url
-                link_description = "Unknown: Source URL - external reference"
-                url.generate_external_references(
-                    [(link_id, link_url, link_description)]
-                )
-                url.generate_stix_objects()
+                is_valid_url = validators.url(_url)
 
-                self._generate_relations(url, related_objects, is_ioc=url_is_ioc)
+                if is_valid_url:
 
-                url.add_relationships_to_stix_objects()
+                    url = self.generate_stix_url(_url)
+                    url.is_ioc = url_is_ioc
+                    url.set_valid_from(valid_from)
+                    url.set_valid_until(valid_until)
+                    link_id = "NoId"
+                    link_url = _url
+                    link_description = "Unknown: Source URL - external reference"
+                    url.generate_external_references(
+                        [(link_id, link_url, link_description)]
+                    )
+                    url.generate_stix_objects()
 
-                _url_stix_objects.append(url)
+                    self._generate_relations(url, related_objects, is_ioc=url_is_ioc)
+
+                    url.add_relationships_to_stix_objects()
+
+                    _url_stix_objects.append(url)
+
+                else:
+                self.helper.log_warning(f"Wrong format of url: {_url}")
 
             if _ip:
-                ip = self.generate_stix_ipv4(_ip)
+                is_valid_ipv4 = validators.ipv4(_ip)
 
-                ip.set_description(_description)
-                ip.is_ioc = ip_is_ioc
-                ip.set_valid_from(valid_from)
-                ip.set_valid_until(valid_until)
-                ip.generate_stix_objects()
+                if is_valid_ipv4:
+                    ip = self.generate_stix_ipv4(_ip)
 
-                self._generate_relations(ip, related_objects, is_ioc=ip_is_ioc)
+                    ip.set_description(_description)
+                    ip.is_ioc = ip_is_ioc
+                    ip.set_valid_from(valid_from)
+                    ip.set_valid_until(valid_until)
+                    ip.generate_stix_objects()
 
-                if domain:
-                    self._generate_relations(ip, [domain])
-                if url:
-                    self._generate_relations(ip, [url])
+                    self._generate_relations(ip, related_objects, is_ioc=ip_is_ioc)
 
-                ip.add_relationships_to_stix_objects()
+                    if domain:
+                        self._generate_relations(ip, [domain])
+                    if url:
+                        self._generate_relations(ip, [url])
 
-                _ip_stix_objects.append(ip)
+                    ip.add_relationships_to_stix_objects()
+
+                    _ip_stix_objects.append(ip)
+                else:
+                    self.helper.log_warning(f"Wrong format of ipv4: {_ip}")
 
         return _domain_stix_objects, _url_stix_objects, _ip_stix_objects
 
