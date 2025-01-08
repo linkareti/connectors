@@ -642,8 +642,9 @@ class DataToSTIXAdapter:
         _date_first_seen = self._retrieve_date(json_date_obj, "first-seen")
         _date_last_seen = self._retrieve_date(json_date_obj, "last-seen")
 
-        self.helper.log_warning(f"TOMA LA First! {_date_first_seen} .")
-        self.helper.log_warning(f"TOMA LA Last! {_date_last_seen} .")
+        if _date_last_seen < _date_first_seen:
+            self.helper.log_warning(f"Threat actor {_threat_actor_name} has a 'last seen' date earlier than the 'first seen' date. The 'last seen' date will be updated to match the 'first seen' date.")
+            _date_last_seen = _date_first_seen
 
         _portal_link = self._retrieve_link(obj)
 
