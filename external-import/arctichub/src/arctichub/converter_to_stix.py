@@ -357,7 +357,7 @@ class ConverterToStix:
         stix_objects.extend(domains)
 
         # hadle ips
-        ips = self.handle_ips(data, customer)
+        ips = self.handle_ips(data, customer, infrastructure)
         stix_objects.extend(ips)
 
         # hadle autonomous systems
@@ -436,7 +436,7 @@ class ConverterToStix:
 
         return stix_domains
 
-    def handle_ips(self, data: dict, customer: stix2.Identity):
+    def handle_ips(self, data: dict, customer: stix2.Identity, infrastructure: stix2.Infrastructure):
 
         stix_ips = []
 
@@ -458,6 +458,15 @@ class ConverterToStix:
                     )
 
                     stix_ips.append(ip_relationship)
+
+                    ip_infrastructure_relationship = self.create_relationship(
+                        source_id=ip_address.id,
+                        relationship_type="part-of",
+                        target_id=infrastructure.id,
+                    )
+
+                    stix_ips.append(ip_infrastructure_relationship)
+
                 else:
                     self.helper.connector_logger.warning(
                         "[CONNECTOR] Customer with unsupported ip value",
