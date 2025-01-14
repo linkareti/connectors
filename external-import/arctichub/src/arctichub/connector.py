@@ -137,12 +137,15 @@ class ConnectorArctichub:
                     )
                     create_organization = False
 
-                paged_stix_objects = self.converter_to_stix.process_customer(customer_data)
-                stix_objects.extend(paged_stix_objects)
+                stix_objects.extend(self.converter_to_stix.process_customer(customer_data))
                 
                 # Send this page to the platform
                 if stix_objects:
                     stix_objects_bundle = self.helper.stix2_create_bundle(stix_objects)
+
+                    # Empty the variables to free up memory
+                    stix_objects.clear()
+                    stix_objects = None
                     bundles_sent = self.helper.send_stix2_bundle(
                         stix_objects_bundle,
                         update=self.config.update_existing_data,
@@ -159,6 +162,9 @@ class ConnectorArctichub:
                             "bundles_sent": str(len(bundles_sent))
                         },
                     )
+
+                stix_objects_bundle = None
+                bundles_sent = None
 
             # Store the current timestamp as a last run of the connector
             current_state = self.helper.get_state() or {}
