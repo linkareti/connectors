@@ -101,6 +101,10 @@ class ConnectorArctichub:
             # Fetch all customers
             all_customers = self.client.get_customers()
 
+            # Sort the list by the number of IP ranges in descending order just to ensure the "bigger customers" are processed first
+            all_customers = sorted(all_customers, key=lambda x: len(x["data"].get("ip range", [])), reverse=True
+)
+
             # Process customers in "pages"
             total_processed = 0
             total_customers = len(all_customers)
