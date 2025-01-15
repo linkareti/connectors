@@ -460,9 +460,9 @@ class ConverterToStix:
                     stix_ips.append(ip_relationship)
 
                     ip_infrastructure_relationship = self.create_relationship(
-                        source_id=ip_address.id,
-                        relationship_type="part-of",
-                        target_id=infrastructure.id,
+                        source_id=infrastructure.id,
+                        relationship_type="consists-of",
+                        target_id=ip_address.id,
                     )
 
                     stix_ips.append(ip_infrastructure_relationship)
