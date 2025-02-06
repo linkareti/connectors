@@ -13,6 +13,8 @@ from pycti import (
     StixCoreRelationship,
     ThreatActor,
     Location,
+    Infrastructure,
+    Malware,
 )
 
 from .constants import (
@@ -120,6 +122,55 @@ class ConverterToStix:
             modified=modified,
         )
         return relationship
+
+    def create_infrastructure(self, name: str) -> stix2.Infrastructure:
+        """
+        Create an infraestructure.
+        :param name: Name of infrastructure in string
+        :return: Infraestructure in Stix2 object
+        """
+        infraestructure = stix2.Infrastructure(
+            id=Infrastructure.generate_id(name),
+            name=name,
+            created_by_ref=self.author
+            )
+
+        return infraestructure
+
+    def create_software(
+        self,
+        name: str,
+    ) -> stix2.Software:
+        """
+        Creates software object
+        :param name: Name of software in string
+        
+        :return: Software STIX2 object
+        """
+        software = stix2.Software(
+            name=name
+        )
+        
+        return software
+
+    def create_malware(
+        self,
+        name: str,
+    ) -> stix2.Malware:
+        """
+        Creates Malware object
+        :param name: Name of malware in string
+        
+        :return: Malware STIX2 object
+        """
+        malware = stix2.Malware(
+            id=Malware.generate_id(name),
+            name=name,
+            is_family=True,
+            created_by_ref=self.author.id,
+        )
+        
+        return malware
 
     @staticmethod
     def _is_ipv6(value: str) -> bool:

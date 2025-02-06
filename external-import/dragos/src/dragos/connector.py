@@ -220,17 +220,16 @@ class ConnectorDragos:
 
         object_refs = list(self.report_object_refs_from_cache(report))
 
-        locations = self.handle_report_geographic_locations(report)
-        stix_objects.extend(locations)
-        object_refs.extend([location.id for location in locations])
-        
-        sectors = self.handle_report_industries(report)
-        stix_objects.extend(sectors)
-        object_refs.extend([sector.id for sector in sectors])
+        stix_object_from_tags = self.handle_tags(report)
+        stix_objects.extend(stix_object_from_tags)
+        object_refs.extend([object_from_tag.id for object_from_tag in stix_object_from_tags])
 
-        attack_patterns = self.handle_report_attack_patterns(report)
-        stix_objects.extend(attack_patterns)
-        object_refs.extend([attack_pattern.id for attack_pattern in attack_patterns])
+        if not object_refs:
+            self.helper.connector_logger.info(
+                "[CONNECTOR] Report import ignored since it doesn't have any referenced object...",
+                {"report_serial": report.get("serial")},
+            )
+            return []
 
         stix_report = self.converter_to_stix.create_report(
             name=report.get("title"),
@@ -253,6 +252,32 @@ class ConnectorDragos:
 
         return stix_objects
     
+    def handle_tags(self, report: dict) -> list:
+        stix_objects = []
+
+        locations = self.handle_report_geographic_locations(report)
+        stix_objects.extend(locations)
+        
+        sectors = self.handle_report_industries(report)
+        stix_objects.extend(sectors)
+
+        attack_patterns = self.handle_report_attack_patterns(report)
+        stix_objects.extend(attack_patterns)
+
+        vendors = self.handle_report_vendors(report)
+        stix_objects.extend(vendors)
+
+        system_types = self.handle_report_system_types(report)
+        stix_objects.extend(system_types)
+
+        malwares = self.handle_report_malware(report)
+        stix_objects.extend(malwares)
+
+        softwares = self.handle_report_softwares(report)
+        stix_objects.extend(softwares)
+
+        return stix_objects
+
     def handle_report_geographic_locations(self, report: dict):
         stix_objects = []
 
@@ -292,6 +317,50 @@ class ConnectorDragos:
             attack_pattern = self.converter_to_stix.create_attack_pattern(attack_pattern_tag)
             stix_objects.append(attack_pattern)
             
+        return stix_objects
+
+    def handle_report_vendors(self, report: dict):
+        stix_objects = []
+
+        vendor_tags = [tag['text'] for tag in report['tags'] if tag['tag_type'] == 'Vendor']
+
+        for vendor_tag in vendor_tags:
+            vendor = self.converter_to_stix.create_identity(name = vendor_tag, identity_class="organization")
+            stix_objects.append(vendor)
+    
+        return stix_objects
+        
+    def handle_report_system_types(self, report: dict):
+        stix_objects = []
+    
+        system_type_tags = [tag['text'] for tag in report['tags'] if tag['tag_type'] == 'System Type']
+
+        for system_type_tag in system_type_tags:
+            system_type = self.converter_to_stix.create_infrastructure(name=system_type_tag)
+            stix_objects.append(system_type)
+
+        return stix_objects
+
+    def handle_report_malware(self, report: dict):
+        stix_objects = []
+    
+        malware_tags = [tag['text'] for tag in report['tags'] if tag['tag_type'] == 'Malware']
+
+        for malware_tag in malware_tags:
+            malware = self.converter_to_stix.create_malware(name=malware_tag)
+            stix_objects.append(malware)
+
+        return stix_objects
+
+    def handle_report_softwares(self, report: dict):
+        stix_objects = []
+
+        software_tags = [tag['text'] for tag in report['tags'] if tag['tag_type'] == 'Software']
+
+        for software_tag in software_tags:
+            software = self.converter_to_stix.create_software(name=software_tag)
+            stix_objects.append(software)
+    
         return stix_objects
 
     def _process_reports(self, reports: List[dict]) -> Generator[List, None, None]:
