@@ -61,10 +61,18 @@ class ConfigConnector:
             self.load,
         )
 
-        self.start_date = get_config_variable(
-            "CONNECTOR_DRAGOS_START_DATE",
-            ["connector_dragos", "start_date"],
+        self.import_start_date = get_config_variable(
+            "CONNECTOR_DRAGOS_IMPORT_START_DATE",
+            ["connector_dragos", "import_start_date"],
             self.load,
+        )
+
+        self.reports_import_interval = get_config_variable(
+            "CONNECTOR_DRAGOS_REPORTS_IMPORT_INTERVAL",
+            ["connector_dragos", "reports_import_interval"],
+            self.load,
+            isNumber=True,
+            default=60,
         )
 
         self.requests_per_minute_limit = get_config_variable(
@@ -97,4 +105,12 @@ class ConfigConnector:
             self.load,
             isNumber=True,
             default=500,
+        )
+
+        self.batch_size = get_config_variable(
+            "CONNECTOR_DRAGOS_BATCH_SIZE",
+            ["connector_dragos", "batch_size"],
+            self.load,
+            isNumber=True,
+            default=5000,
         )

@@ -11,20 +11,21 @@ from pycti import (
     OpenCTIConnectorHelper,
     Report,
     StixCoreRelationship,
-    StixSightingRelationship,
     ThreatActor,
+    Location,
 )
 
 from .constants import (
     INDICATOR_TYPE_MAPPING,
     STIX_TLP_MAP,
-    CONFIDENCE_MAP,
     X_MITRE_ID,
-    X_OPENCTI_EXTERNAL_REFERENCES,
-    X_OPENCTI_LABELS,
+    CONFIDENCE_MAP,
     X_OPENCTI_REPORT_STATUS,
     X_OPENCTI_SCORE,
+    DEFAULT_X_OPENCTI_SCORE,
+    THREAT_LEVEL_MAP,
 )
+
 from .indicator_type_not_supported_error import IndicatorTypeNotSupportedError
 
 
@@ -56,20 +57,42 @@ class ConverterToStix:
         )
         return external_reference
     
-    @staticmethod
-    def create_author() -> stix2.Identity:
+    def create_identity(
+        self,
+        name: str,
+        identity_class: str,
+        description: str = None,
+        created_by_ref: stix2.Identity = None,
+        contact_information: list = None,
+        ) -> stix2.Identity:
+        """
+        Create an identity.
+        :return: Identity in Stix2 object
+        """
+        identity = stix2.Identity(
+            id=Identity.generate_id(name=name, identity_class=identity_class),
+            name=name,
+            created_by_ref=created_by_ref,
+            identity_class=identity_class,
+            description=description,
+            contact_information=contact_information,
+        )
+
+        return identity
+    
+    def create_author(self) -> stix2.Identity:
         """
         Create Author
         :return: Author in Stix2 object
         """
-        #name=self.helper.connect_name
-        author = stix2.Identity(
-            id=Identity.generate_id(name="Dragos", identity_class="organization"),
+        author = self.create_identity(
             name="Dragos",
             identity_class="organization",
             description="Dragos WorldView",
         )
+
         return author
+
 
     def create_relationship(
         self, source_id: str, 
@@ -266,12 +289,14 @@ class ConverterToStix:
         modified: Optional[datetime] = None,
         valid_from: Optional[datetime] = None,
         labels: Optional[List[str]] = None,
-        confidence: Optional[int] = None,
+        confidence: Optional[str] = None,
     ) -> stix2.Indicator:
         """
         Creates Indicator object
         """  
         pattern = self._generate_stix2_pattern(indicator_type, value)
+
+        confidence = CONFIDENCE_MAP.get(confidence, 60)
         
         indicator =  stix2.Indicator(
             id=Indicator.generate_id(pattern),
@@ -288,45 +313,35 @@ class ConverterToStix:
         )
         return indicator
     
-    def create_sighting(
-        self, 
-        first_seen, 
-        last_seen,
-        indicator: stix2.Indicator = None, 
-        created: Optional[datetime] = None,
-        modified: Optional[datetime] = None,
-    ) -> stix2.Sighting:
-        """
-        Creates Sighting object
-        """
-        default_now = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
-        sighting = stix2.Sighting(
-            id = StixSightingRelationship.generate_id(
-                indicator.id,
-                self.author.id,
-                first_seen,
-                last_seen
-            ),
-            created = created,
-            modified = modified,
-            created_by_ref=self.author.id,
-            first_seen=first_seen,
-            last_seen=last_seen,
-            count=1,
-            sighting_of_ref=indicator.id
-            #confidence=confidence,
-            #labels ???
+    # def create_sighting(
+    #     self, 
+    #     first_seen, 
+    #     last_seen,
+    #     indicator: stix2.Indicator = None, 
+    #     created: Optional[datetime] = None,
+    #     modified: Optional[datetime] = None,
+    # ) -> stix2.Sighting:
+    #     """
+    #     Creates Sighting object
+    #     """
+    #     sighting = stix2.Sighting(
+    #         id = StixSightingRelationship.generate_id(
+    #             indicator.id,
+    #             self.author.id,
+    #             first_seen,
+    #             last_seen
+    #         ),
+    #         created = created,
+    #         modified = modified,
+    #         created_by_ref=self.author.id,
+    #         first_seen=first_seen,
+    #         last_seen=last_seen,
+    #         count=1,
+    #         sighting_of_ref=indicator.id,
+    #         where_sighted_refs=None
             
-            #sighting_of_ref=stix_indicator["id"],
-            #where_sighted_refs=[self.author.id],
-            #external_references=external_reference,
-            #object_marking_refs=stix2.TLP_WHITE,
-            #            custom_properties={
-            #    "x_opencti_sighting_of_ref": self.stix_entity["id"],
-            #    "x_opencti_negative": True,
-            #},
-        )
-        return sighting
+    #     )
+    #     return sighting
     
     def create_attack_pattern(
         self, 
@@ -336,12 +351,14 @@ class ConverterToStix:
         object_markings: Optional[List[stix2.MarkingDefinition]] = None,
         created: Optional[datetime] = None,
         modified: Optional[datetime] = None,
-        confidence: Optional[int] = None,
+        confidence: Optional[str] = None,
         labels: Optional[List[str]] = None,
         ) -> stix2.AttackPattern:
             """
             Creates AttackPattern object
             """
+            confidence = CONFIDENCE_MAP.get(confidence, 60)
+
             attack_pattern=stix2.AttackPattern(
                 id=AttackPattern.generate_id(name, name),
                 created_by_ref=self.author,
@@ -368,11 +385,12 @@ class ConverterToStix:
             Creates ThreatActor object
             """
             threat_actor=stix2.ThreatActor(
-                id = ThreatActor.generate_id(name),
+                id = ThreatActor.generate_id(name, "Threat-Actor-Group"),
                 created_by_ref = self.author,
                 created = created,
                 modified = modified,
                 name = name,
+                resource_level=None,
                 labels = labels,        
             )
             return threat_actor
@@ -401,113 +419,57 @@ class ConverterToStix:
 
         indicator_pattern = mapping["pattern"].format(value=value)
         return indicator_pattern
-    
-    
-    def process_indicator(self, data: Dict) -> List[Dict]:
-        stix_objects = []
 
-        observable = self.create_obs(data["value"])
-        if observable is not None:
-            stix_objects.append(observable)
 
-        labels = self.get_default_labels() #["malicious-activity"], FIXME: what labels to use? malicious-activity? hacker?
-        
-        confidence = CONFIDENCE_MAP.get(data["confidence"], 60)
-        
-        indicator = self.create_indicator(
-            indicator_type = data["indicator_type"],
-            value = data["value"],
-            name = f"Indicator for {data['value']}",
-            description = data.get("comment"),
-            valid_from = data.get("first_seen"),
-            created = data.get("first_seen"),
-            modified = data.get("updated_at"),
-            labels=labels,
-            confidence=confidence
+    def create_country(
+        self,
+        name: str
+        ) -> list[dict]:
+
+        stix_location = stix2.Location(
+            id=Location.generate_id(name, "Country"),
+            name=name,
+            country=name,
+            created_by_ref=self.author,
+            custom_properties={
+                "x_opencti_location_type": "Country",
+            },
         )
-        stix_objects.append(indicator)
 
-        sighting = self.create_sighting(
-            indicator = indicator,
-            first_seen = data.get("first_seen"),
-            last_seen = data.get("last_seen")
+        return stix_location
+
+    def create_region(
+        self,
+        name: str
+        ) -> list[dict]:
+
+        stix_location = stix2.Location(
+            id=Location.generate_id(name, "Region"),
+            name=name,
+            region=name,
+            created_by_ref=self.author,
+            custom_properties={
+                "x_opencti_location_type": "Region",
+            },
         )
-        stix_objects.append(sighting)
 
-        attack_patterns = self.handle_attack_techniques(indicator, data)
-        if attack_patterns:
-            stix_objects.extend(attack_patterns)
+        return stix_location
 
-        threat_actors = self.handle_threat_groups(indicator, data)
-        if threat_actors:
-            stix_objects.extend(threat_actors)
+    def create_sector(self, name: str, description: str = None) -> stix2.Identity:
+        """
+        Create a sector.
+        :return: Sector in Stix2 object
+        """
+        sector = self.create_identity(
+            name=name,
+            identity_class="class",
+            description=description,
+            created_by_ref=self.author
+            )
 
-        # Additional handlers can be added here as needed for other fields
-        # e.g., handle_kill_chains(indicator, data)
-        
-        return stix_objects
-
-    def handle_attack_techniques(self, indicator, data: Dict) -> List[Dict]:
-        
-        stix_objects = []
-        
-        labels = self.get_default_labels() #["malicious-activity"], FIXME: what labels to use? malicious-activity? hacker?
-        confidence = CONFIDENCE_MAP.get(indicator["confidence"], 60)
-        
-        # A helper function to process both attack and ICS techniques
-        def add_technique(techniques, technique_type="attack"):
-            for technique in techniques:
-                # Handle the technique names differently for ics_attack_techniques if needed
-                attack_pattern = self.create_attack_pattern(
-                    name=technique, 
-                    #kill_chain_phases= #FIXME: extract kill chain phases
-                    created=indicator.get("first_seen"),
-                    modified=indicator.get("updated_at"),
-                    labels=labels,
-                    confidence=confidence
-                )
-                
-                stix_objects.append(attack_pattern)
-
-                # Create the relationship between indicator and attack pattern
-                relationship = self.create_relationship(
-                    source_id=indicator.id, 
-                    relationship_type='indicates', 
-                    target_id=attack_pattern.id,
-                    created=indicator.get("first_seen"),
-                    modified=indicator.get("updated_at")
-                )
-                
-                stix_objects.append(relationship)
-        
-        # Process regular attack techniques
-        if data.get("attack_techniques"):
-            add_technique(data["attack_techniques"], technique_type="attack")
-        
-        # Process ICS attack techniques
-        if data.get("ics_attack_techniques"):
-            add_technique(data["ics_attack_techniques"], technique_type="ics")
+        return sector
 
 
-    def handle_threat_groups(self, indicator, data: Dict) -> List[Dict]:
-        stix_objects = []
-        if data.get("threat_groups"):
-            for group in data["threat_groups"]:
-                threat_actor = self.create_threat_actor(group)
-                stix_objects.append(threat_actor)
-                
-                relationship = self.create_relationship(
-                    source_id = indicator.id, 
-                    relationship_type = 'indicates', 
-                    target_id = threat_actor.id,
-                    created=indicator.get("first_seen"),
-                    modified=indicator.get("updated_at")
-                )     
-                
-                stix_objects.append(relationship)
-        
-        return stix_objects
-                
     def create_report(
         self, 
         name: str,
@@ -519,13 +481,25 @@ class ConverterToStix:
         report_types: Optional[List[str]] = None,
         labels: Optional[List[str]] = None,
         confidence: Optional[int] = None,
-        external_references: Optional[List[stix2.ExternalReference]] = None,
-        object_markings: Optional[List[stix2.MarkingDefinition]] = None,
-        custom_properties: Optional[Dict[str, str]] = None,
+        tlp_level: Optional[str] = None,
+        report_status: Optional[str] = None,
+        threat_level: Optional[int] = None,
+        report_link: Optional[str] = None,
+        slides_link: Optional[str] = None,
+
         ) -> stix2.Report:
             """
             Creates Report object
-            """        
+            """
+            object_markings = STIX_TLP_MAP.get(tlp_level, stix2.TLP_WHITE)
+
+            opencti_score = THREAT_LEVEL_MAP.get(threat_level, DEFAULT_X_OPENCTI_SCORE)
+
+            external_references = []
+
+            self.add_external_reference(report_link, 'Report link', external_references)
+            self.add_external_reference(slides_link, 'Slides link', external_references)
+            
             report=stix2.Report(
                 id=Report.generate_id(name, published),
                 created_by_ref=self.author.id,
@@ -540,30 +514,15 @@ class ConverterToStix:
                 confidence=confidence,
                 external_references=external_references,
                 object_marking_refs=object_markings,
-                custom_properties = custom_properties,
+                custom_properties={
+                    # X_OPENCTI_REPORT_STATUS: report_status,
+                    X_OPENCTI_SCORE: opencti_score
+                },
                 allow_custom=True,
             )
             
             return report
 
-    def _get_report_external_references(self, report: Dict) -> List[stix2.ExternalReference]:
-            """
-            Creates External References for all the report links
-            """
-            external_references = []
-            
-            report_link = report["report_link"]
-            if report_link:
-                report_link_external_reference = self.create_external_reference(self.author.name, report_link, 'Report link')
-                external_references.append(report_link_external_reference)
-                
-            slides_link = report["slides_link"]
-            if slides_link:
-                slides_link_external_reference = self.create_external_reference(self.author.name, slides_link, 'Slides link')
-                external_references.append(slides_link_external_reference)
-                                
-            return external_references
-    
     def add_external_reference(self, link, link_type, external_references):
         """
         Helper function to create and append an external reference if the link exists.
@@ -572,81 +531,6 @@ class ConverterToStix:
             external_reference = self.create_external_reference(self.author.name, link, link_type)
             external_references.append(external_reference)
          
-    def process_report(self, data: Dict) -> List[Dict]:
-        stix_objects = []
-        external_references = []
-        
-        report_link = data.get("report_link")
-        slides_link = data.get("slides_link")
-
-        self.add_external_reference(report_link, 'Report link', external_references)
-        self.add_external_reference(slides_link, 'Slides link', external_references)
-        
-        object_markings = STIX_TLP_MAP.get(data["tlp_level"], stix2.TLP_WHITE)
-
-        labels = self.get_default_labels()
-
-        report = self.create_report(
-            name=data["title"],
-            published=data["release_date"],
-            object_refs=data['object_refs'],
-            created=data["release_date"],
-            modified=data["updated_at"],
-            description=data["executive_summary"],
-            report_types=None,
-            labels=labels,
-            confidence=None,
-            external_references=external_references,
-            object_markings=[object_markings],
-            custom_properties={   # FIXME: what custom properties?
-                    X_OPENCTI_SCORE: None,
-                    X_OPENCTI_LABELS: None,
-                    X_OPENCTI_EXTERNAL_REFERENCES: None,
-                    X_OPENCTI_REPORT_STATUS: None
-                }
-        )
-
-        stix_objects.append(report)
-        
-        return stix_objects
-
-    def enrich_reports_with_indicators(self, reports: list, report_indicators: list) -> List[Dict]:
-        """
-        Enrich reports with indicators data and generate STIX2 patterns.
-        :return: The list of reports enriched with indicator data
-        """ 
-        
-        # Iterate over each report and match indicators by 'serial'
-        for report in reports:
-            report_serial = report['serial']
-            
-            # Find all indicators matching the current report serial
-            matching_indicators = [
-                indicator for indicator in report_indicators 
-                if any(product['serial'] == report_serial for product in indicator['products'])
-            ]
-            
-            # For each matching indicator, generate STIX2 pattern and update report
-            for indicator in matching_indicators:
-                indicator_type = indicator['indicator_type']
-                value = indicator['value']
-
-                if 'object_refs' not in report:
-                    report['object_refs'] = []
-                
-                try:
-                    pattern = self._generate_stix2_pattern(indicator_type, value)
-                    indicator_id = Indicator.generate_id(pattern)
-                 
-                    report['object_refs'].append(indicator_id)
-                except IndicatorTypeNotSupportedError as e:
-                    self.helper.connector_logger.warning(
-                        "Report with unsupported indicator",
-                        {"report": report_serial, "indicator_type": indicator_type}
-                    )
-        
-        return reports
-    
     def get_default_labels(self) -> list:
         
         return [self.author.name]

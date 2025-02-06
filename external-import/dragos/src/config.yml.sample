@@ -23,8 +23,10 @@ connector_dragos:
   api_base_url: 'https://portal.dragos.com/api/v1/'
   api_access_token: 'ChangeMe'
   api_access_key: 'ChangeMe'
-  start_date: '2024-01-01'
+  import_start_date: '2024-01-01'
+  reports_import_interval: 60
   requests_per_minute_limit: 30
   requests_per_week_limit: 250
   indicators_page_size: 1000
   reports_page_size: 500
+  batch_size: 5000

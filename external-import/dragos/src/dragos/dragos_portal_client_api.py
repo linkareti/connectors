@@ -4,6 +4,10 @@ from typing import Dict, List
 
 import requests
 
+import csv
+from io import StringIO
+from datetime import datetime
+
 
 class DragosClient:
     
@@ -21,6 +25,7 @@ class DragosClient:
 
         self.indicators_endpoint = self.config.api_base_url + 'indicators'
         self.reports_endpoint = self.config.api_base_url + 'products'
+        self.report_csv_endpoint = self.config.api_base_url + 'products/{id}/csv'
         
         self.requests_per_minute_limit = self.config.requests_per_minute_limit
         self.requests_per_week_limit = self.config.requests_per_week_limit
@@ -191,3 +196,39 @@ class DragosClient:
 
         # Increment the per-week request count
         self.weekly_requests_count += 1
+
+    def get_report_ioc_csv(self, serial: str):
+        """
+        :return: A list of Indicators of compromise (indicators, threat actors, ma) for a given report
+        """
+        api_url = self.report_csv_endpoint.format(id=serial)
+
+        request_data = self._request_data(api_url)
+
+        # Create a StringIO object to parse CSV from string
+        csv_data = StringIO(request_data.text)
+        
+        # Parse CSV with DictReader (uses first row as field names)
+        reader = csv.DictReader(csv_data)
+        
+        processed_iocs = []
+        for row in reader:
+            # Process each row into a more structured format
+            processed_row = {
+                'products': [{'serial': serial}],  # Wrapping the serial in a dictionary to mimic what is returned normally for an indicator
+                'value': row['Indicator Value'],
+                'indicator_type': row['Type'],
+                'comment': row['Comment'],
+                'first_seen': datetime.strptime(row['First Seen'], '%Y-%m-%d %H:%M:%S UTC'),
+                'last_seen': datetime.strptime(row['Last Seen'], '%Y-%m-%d %H:%M:%S UTC'),
+                'updated': datetime.strptime(row['Updated'], '%Y-%m-%d %H:%M:%S UTC'),
+                'confidence': row['Confidence'],
+                'kill_chain': [x.strip() for x in row['Kill Chain'].split(',')] if row['Kill Chain'] else [],
+                'threat_groups': [x.strip() for x in row['Threat Groups'].split(',')] if row['Threat Groups'] else [],
+                'attack_techniques': [x.strip() for x in row['ATT&CK Techniques'].split(',')] if row['ATT&CK Techniques'] else [],
+                'pre_attack_techniques': [x.strip() for x in row['Pre-ATT&CK Techniques'].split(',')] if row['Pre-ATT&CK Techniques'] else []
+            }
+
+            processed_iocs.append(processed_row)
+        
+        return processed_iocs

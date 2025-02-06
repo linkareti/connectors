@@ -1,6 +1,6 @@
 services:
   connector-dragos:
-    image: opencti/connector-dragos:6.2.18
+    image: opencti/connector-dragos:6.4.4
     environment:
       # OpenCTI platform
       - OPENCTI_URL=http://localhost
@@ -16,9 +16,11 @@ services:
       - CONNECTOR_DRAGOS_API_BASE_URL=https://portal.dragos.com/api/v1/
       - CONNECTOR_DRAGOS_API_ACCESS_TOKEN=CHANGEME
       - CONNECTOR_DRAGOS_API_ACCESS_KEY=CHANGEME
-      - CONNECTOR_DRAGOS_START_DATE=2024-01-01
+      - CONNECTOR_DRAGOS_IMPORT_START_DATE=2024-01-01
+      - CONNECTOR_DRAGOS_REPORTS_IMPORT_INTERVAL=60
       - CONNECTOR_DRAGOS_REQUESTS_PER_MINUTE_LIMIT=30
       - CONNECTOR_DRAGOS_REQUESTS_PER_MINUTE_LIMIT=250
+      - CONNECTOR_DRAGOS_BATCH_SIZE=5000
     restart: always
     # networks:
     #   - docker_default
