@@ -40,7 +40,7 @@ class ConnectorDragos:
         indicator = self.converter_to_stix.create_indicator(
             indicator_type = data["indicator_type"],
             value = data["value"],
-            name = f"Indicator for {data['value']}",
+            name = data['value'],
             description = data.get("comment"),
             valid_from = data.get("first_seen"),
             created = data.get("first_seen"),
@@ -49,6 +49,14 @@ class ConnectorDragos:
             confidence=data.get("confidence")
         )
         stix_objects.append(indicator)
+
+        based_on_relationship = self.converter_to_stix.create_relationship(
+            source_id = indicator.id, 
+            relationship_type = 'based-on', 
+            target_id = observable.id,
+        )
+        
+        stix_objects.append(based_on_relationship)
 
         # sighting = self.converter_to_stix.create_sighting(
         #     indicator = indicator,
@@ -124,7 +132,7 @@ class ConnectorDragos:
                     target_id = threat_actor.id,
                     created=indicator.get("first_seen"),
                     modified=indicator.get("updated_at")
-                )     
+                )
                 
                 stix_objects.append(relationship)
         
