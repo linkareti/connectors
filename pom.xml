@@ -44,7 +44,7 @@
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <opencti.version>6.4.4</opencti.version>
+        <opencti.version>6.5.1</opencti.version>
     </properties>
 
     <modules>
