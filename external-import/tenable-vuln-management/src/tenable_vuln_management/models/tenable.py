@@ -140,7 +140,9 @@ class Plugin(FrozenBaseModelWithWarnedExtra):
     Represents plugin details that provide information about the detected vulnerability.
     """
 
-    bid: list[int] = Field(..., description="Bugtraq IDs related to the vulnerability.")
+    bid: Optional[list[int]] = Field(
+        None, description="Bugtraq IDs related to the vulnerability."
+    )
     checks_for_default_account: bool = Field(
         ..., description="Indicates if the plugin checks for default accounts."
     )
@@ -286,8 +288,8 @@ class Asset(FrozenBaseModelWithWarnedExtra):
         ..., description="The ID of the network the asset belongs to."
     )
     tracked: bool = Field(..., description="Indicates if the asset is being tracked.")
-    last_scan_target: str = Field(
-        ...,
+    last_scan_target: Optional[str] = Field(
+        None,
         description="The IP address or fully qualified domain name \
                                   (FQDN) of the asset targeted in the last scan.",
     )
@@ -317,7 +319,7 @@ class Scan(FrozenBaseModelWithWarnedExtra):
         ..., description="The timestamp when the scan started."
     )
     uuid: str = Field(..., description="The UUID of the scan.")
-    target: str = Field(
+    target: Optional[str] = Field(
         ...,
         description="The IP address or fully qualified domain name of the asset targeted in the scan.",
     )

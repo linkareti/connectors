@@ -1,17 +1,27 @@
-FROM python:3.12-alpine
-ENV CONNECTOR_TYPE=EXTERNAL_IMPORT
-
-# Copy the connector
-COPY src /opt/opencti-connector-dragos
+# syntax=docker.io/docker/dockerfile:1.20-labs
+FROM python:3.12-alpine AS base
 
 # Install Python modules
 # hadolint ignore=DL3003
-RUN apk --no-cache add git build-base libmagic libffi-dev libxml2-dev libxslt-dev && \
-    cd /opt/opencti-connector-dragos && \
-    pip3 install --no-cache-dir -r requirements.txt && \
-    apk del git build-base
+RUN apk update && apk upgrade && \
+    apk --no-cache add git build-base libmagic libffi-dev libxml2-dev libxslt-dev && \
+    pip3 install --no-cache-dir --upgrade pip
 
-# Expose and entrypoint
-COPY entrypoint.sh /
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
+
+FROM base AS packages
+COPY --parents src/ pyproject.toml /opt/
+
+# install then clean up
+RUN cd /opt/ && \
+    pip3 install --no-cache-dir . && \
+    apk del git build-base && \
+    rm /opt/pyproject.toml && \
+    rm -rf /opt/src && \ 
+    rm -rf /opt/build
+
+FROM packages AS app
+# Copy the app
+COPY src/main.py /opt/main.py
+
+# Run the app
+CMD ["python3", "/opt/main.py"]

@@ -42,8 +42,7 @@ def mock_config():
 
 @pytest.fixture
 def fake_asset():
-    return Asset.model_validate_json(
-        """
+    return Asset.model_validate_json("""
         {
         "device_type": "general-purpose",
         "fqdn": "sharepoint2016.target.example.com",
@@ -59,14 +58,12 @@ def fake_asset():
         "tracked": true,
         "last_scan_target": "192.0.0.1"
         }
-        """
-    )
+        """)
 
 
 @pytest.fixture
 def fake_plugin():
-    return Plugin.model_validate_json(
-        """
+    return Plugin.model_validate_json("""
         {
           "bid": [
             156641
@@ -192,14 +189,12 @@ def fake_plugin():
           ],
           "type": "local"
         }
-    """
-    )
+    """)
 
 
 @pytest.fixture
 def fake_vuln_finding():
-    return VulnerabilityFinding.model_validate_json(
-        """{
+    return VulnerabilityFinding.model_validate_json("""{
             "asset": {
               "device_type": "hypervisor",
               "fqdn": "vcsa8.target.example.com",
@@ -274,8 +269,7 @@ def fake_vuln_finding():
             "indexed": "2023-05-04T09:44:55.673359Z",
             "source": "NESSUS"
           }
-          """
-    )
+          """)
 
 
 def test_tlp_marking_definition_handler_should_fails_with_unsupported_TLP():
@@ -440,6 +434,26 @@ def test_converter_to_stix_make_targeted_software_s(
     assert software.name == "sharepoint_server"
     assert software.vendor == "microsoft"
     assert software.cpe == "cpe:/a:microsoft:sharepoint_server"
+
+
+def test_unhandled_cpe_uri_are_skipped(mock_helper, mock_config, fake_plugin):
+    # Test added in the same time than a fix for the issue
+    # https://github.com/OpenCTI-Platform/connectors/issues/3473
+    # Given a converter to stix instance
+    converter_to_stix = ConverterToStix(
+        helper=mock_helper, config=mock_config, default_marking="TLP:CLEAR"
+    )
+    # And a fake plugin with unhandled CPE URI
+    fake_plugin = fake_plugin.model_copy(
+        update={"cpe": ["p-cpe:/a:unhandled:unhandled"]}
+    )
+
+    # When calling _make_targeted_software_s
+    targeted_software = converter_to_stix._make_targeted_software_s(plugin=fake_plugin)
+
+    # Then the result should contain no software objects
+    assert len(targeted_software) == 0
+    # and nothing raised error...
 
 
 def test_converter_to_stix_make_vulnerabilities(mock_helper, mock_config, fake_plugin):

@@ -11,12 +11,18 @@ class AnyrunFeed(ExternalImportConnector):
     def __init__(self):
         super().__init__()
         self.token = os.environ.get("ANYRUN_TI_TOKEN", "")
-        self.ti_url = "https://api.any.run/v1/feeds/stix.json"
+        self.ti_url = os.environ.get(
+            "ANYRUN_TI_URL", "https://api.any.run/v1/feeds/stix.json"
+        )
 
     def get_feed(self):
         response = requests.get(
             self.ti_url, headers={"Authorization": "API-Key {}".format(self.token)}
         )
+        if response.status_code == 401:
+            response = requests.get(
+                self.ti_url, headers={"Authorization": "Basic {}".format(self.token)}
+            )
         if response.status_code != 200:
             raise ValueError(
                 "Any.RUN api code {}. text: {}".format(
@@ -25,7 +31,7 @@ class AnyrunFeed(ExternalImportConnector):
             )
         return json.loads(response.text)
 
-    def _collect_intelligence(self) -> []:
+    def _collect_intelligence(self) -> list:
         self.helper.log_debug(
             f"{self.helper.connect_name} connector is starting the collection of objects..."
         )
@@ -45,6 +51,6 @@ if __name__ == "__main__":
         connector = AnyrunFeed()
         connector.run()
     except Exception as e:
-        print(e)
+        ExternalImportConnector.log_error(str(e))
         time.sleep(10)
-        sys.exit(0)
+        sys.exit(1)

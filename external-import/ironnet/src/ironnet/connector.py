@@ -32,11 +32,10 @@ class IronNetConnector:
         """Constructor"""
 
         config_path = Path(__file__).parent.parent.joinpath("config.yml")
-        config = (
-            yaml.load(config_path.open(), Loader=yaml.SafeLoader)
-            if config_path.is_file()
-            else {}
-        )
+        config = {}
+        if config_path.is_file():
+            with open(config_path, encoding="utf-8") as f:
+                config = yaml.load(f, Loader=yaml.SafeLoader)
 
         self._helper = OpenCTIConnectorHelper(config)
 
@@ -105,7 +104,6 @@ class IronNetConnector:
                 objects=bundle_objects,
                 allow_custom=True,
             ).serialize(),
-            update=self._helper.config["connector"]["update_existing_data"],
             work_id=work_id,
         )
 
@@ -203,7 +201,6 @@ class IronNetConnector:
                 name=name,
                 is_family=True,
                 created_by_ref=self._identity_id,
-                confidence=self._helper.connect_confidence_level,
                 object_marking_refs=observable.object_marking_refs,
             )
 
@@ -258,7 +255,6 @@ class IronNetConnector:
             labels=observable.x_opencti_labels,
             valid_until=valid_until,
             created_by_ref=self._identity_id,
-            confidence=self._helper.connect_confidence_level,
             object_marking_refs=observable.object_marking_refs,
             custom_properties=dict(
                 x_opencti_score=observable.x_opencti_score,
@@ -285,7 +281,6 @@ class IronNetConnector:
                 relationship_type=rel_type,
                 target_ref=observable.id,
                 created_by_ref=self._identity_id,
-                confidence=self._helper.connect_confidence_level,
                 object_marking_refs=observable.object_marking_refs,
             )
 
@@ -308,7 +303,6 @@ class IronNetConnector:
                 target_ref=observable.id,
                 description=obs_desc,
                 created_by_ref=self._identity_id,
-                confidence=self._helper.connect_confidence_level,
                 object_marking_refs=observable.object_marking_refs,
             )
 
@@ -324,7 +318,6 @@ class IronNetConnector:
                     target_ref=malware.id,
                     description=ind_desc,
                     created_by_ref=self._identity_id,
-                    confidence=self._helper.connect_confidence_level,
                     object_marking_refs=indicator.object_marking_refs,
                 )
 

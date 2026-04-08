@@ -33,7 +33,6 @@ SLEEP_INTERVAL = 250
 
 
 class ReversingLabsSpectraIntelConnector(InternalEnrichmentConnector):
-
     def __init__(self):
         super().__init__()
         self._get_config_variables()
@@ -134,7 +133,6 @@ class ReversingLabsSpectraIntelConnector(InternalEnrichmentConnector):
         relationship,
     ):
         stix_indicator_with_relationship = []
-        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
         rl_threat_platform = results["platform"]
 
         # Create indicator
@@ -145,7 +143,6 @@ class ReversingLabsSpectraIntelConnector(InternalEnrichmentConnector):
             labels=results["labels"],
             pattern=indicator_pattern,
             created_by_ref=self.reversinglabs_identity["standard_id"],
-            valid_from=now,
             object_marking_refs=[stix2.TLP_AMBER],
             custom_properties={
                 "pattern_type": "stix",
@@ -208,7 +205,6 @@ class ReversingLabsSpectraIntelConnector(InternalEnrichmentConnector):
                 stix_malware_with_relationship.append(observable_to_malware)
 
     def _generate_stix_note(self, results):
-        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
         classification = results["classification"]
         platform = results["platform"]
         configuration = results["configuration"]
@@ -217,8 +213,7 @@ class ReversingLabsSpectraIntelConnector(InternalEnrichmentConnector):
         analysis_duration = results["analysis_duration"]
 
         abstract = "ReversingLabs Spectra Sandbox Results"
-        analysis_content = textwrap.dedent(
-            f"""
+        analysis_content = textwrap.dedent(f"""
         # ReversingLabs Spectra Sandbox Analysis metadata
         
         Classification: **{classification}**
@@ -233,8 +228,7 @@ class ReversingLabsSpectraIntelConnector(InternalEnrichmentConnector):
 
         Analysis is executed on **{platform}** operating system with following configuration: **{configuration}**
 
-        """
-        )
+        """)
 
         signature_text_header = """
         
@@ -242,12 +236,10 @@ class ReversingLabsSpectraIntelConnector(InternalEnrichmentConnector):
 
         """
 
-        signature_text_content = textwrap.dedent(
-            """\
+        signature_text_content = textwrap.dedent("""\
         | Description     | Risk Factor       |
         |-----------------|-------------------|
-        """
-        )
+        """)
         signatures_list = results["signatures"]
         sorted_signatures = sorted(
             signatures_list, key=lambda x: x["risk_factor"], reverse=True
@@ -256,11 +248,9 @@ class ReversingLabsSpectraIntelConnector(InternalEnrichmentConnector):
         for sig in sorted_signatures:
             sig_description = sig["description"]
             sig_risk_factor = sig["risk_factor"]
-            signature_text_content += textwrap.dedent(
-                f"""\
+            signature_text_content += textwrap.dedent(f"""\
             | {sig_description} | {sig_risk_factor} |
-            """
-            )
+            """)
 
         signature_text_header = textwrap.dedent(signature_text_header)
         signature_text = signature_text_header + signature_text_content
@@ -269,9 +259,10 @@ class ReversingLabsSpectraIntelConnector(InternalEnrichmentConnector):
 
         # Create Note
         stix_note = stix2.Note(
-            id=Note.generate_id(now, content),
+            id=Note.generate_id(analysis_time, content),
             abstract=abstract,
             content=content,
+            created=analysis_time,
             created_by_ref=self.reversinglabs_identity["standard_id"],
             object_refs=[self.stix_entity["id"]],
             object_marking_refs=[stix2.TLP_AMBER],
@@ -488,7 +479,6 @@ class ReversingLabsSpectraIntelConnector(InternalEnrichmentConnector):
 
             # Submit File for analysis
             if is_archive == False:
-
                 file = open(sample_name, "wb")
                 file.write(file_content)
                 file.close()

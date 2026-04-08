@@ -1,6 +1,7 @@
 import traceback
 
-from internal_enrichment_connector import ConnectorTemplate
+from connector import ConnectorSettings, TemplateConnector
+from pycti import OpenCTIConnectorHelper
 
 if __name__ == "__main__":
     """
@@ -13,7 +14,14 @@ if __name__ == "__main__":
     It signals to the operating system and any calling processes that the program did not complete successfully.
     """
     try:
-        connector = ConnectorTemplate()
+        settings = ConnectorSettings()
+
+        helper = OpenCTIConnectorHelper(
+            config=settings.to_helper_config(),
+            playbook_compatible=True,  # ! `playbook_compatible=True` only if a bundle is sent
+        )
+
+        connector = TemplateConnector(config=settings, helper=helper)
         connector.run()
     except Exception:
         traceback.print_exc()

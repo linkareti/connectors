@@ -1,25 +1,25 @@
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from threading import Lock, Thread
 from typing import NotRequired, Optional, TypedDict, cast
 
+from external_import_connector.settings import ConnectorSettings
 from pycti import OpenCTIConnectorHelper
 from stix2 import TAXIICollectionSource
 
 from .client_api import ConnectorClient
-from .config_variables import ConfigConnector
 
 
 class FeedState(TypedDict):
     added_after: NotRequired[str]
 
 
-class ConnectorIBMXTIState(TypedDict):
+class IBMXTIConnectorState(TypedDict):
     last_run: NotRequired[str]
     feed_states: NotRequired[dict[str, FeedState]]
 
 
-class ConnectorIBMXTI:
+class IBMXTIConnector:
     """
     Specifications of the external import connector
 
@@ -52,26 +52,30 @@ class ConnectorIBMXTI:
 
     """
 
-    __config: ConfigConnector
+    __config: ConnectorSettings
     __helper: OpenCTIConnectorHelper
     __client: ConnectorClient
     __state_lock: Lock
 
-    def __init__(self):
+    def __init__(self, config: ConnectorSettings, helper: OpenCTIConnectorHelper):
         """
-        Initialize the Connector with necessary configurations
+        Initialize `IBMXTIConnector` with its configuration.
+
+        Args:
+            config (ConnectorSettings): Configuration of the connector
+            helper (OpenCTIConnectorHelper): Helper to manage connection and requests to OpenCTI
         """
 
         # Load configuration file and connection helper
-        self.__config = ConfigConnector()
-        self.__helper = OpenCTIConnectorHelper(self.__config.load)
+        self.__config = config
+        self.__helper = helper
         self.__client = ConnectorClient(self.__helper, self.__config)
         self.__state_lock = Lock()
 
     def __ingest_feed_helper(
         self,
         source: TAXIICollectionSource,
-        current_state: ConnectorIBMXTIState,
+        current_state: IBMXTIConnectorState,
     ):
         with self.__state_lock:
             feed_states = current_state.get("feed_states")
@@ -83,6 +87,13 @@ class ConnectorIBMXTI:
             feed_state = feed_states[source.collection.id] = {}
 
         added_after = feed_state.get("added_after")
+        # if this is the first ingest and the collection is vulnerabilities, only ingest from a rolling 2 year period
+        if (
+            not added_after
+            and source.collection.id == "23e33546-486b-415f-851c-250b6a7b0674"
+        ):
+            added_after_dt = datetime.now(timezone.utc) - timedelta(days=365 * 2)
+            added_after = added_after_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         for stix_objects, new_added_after in self.__client.get_latest_stix_objects(
             source, added_after
@@ -90,7 +101,7 @@ class ConnectorIBMXTI:
             if len(stix_objects) > 0:
                 stix_objects_bundle = self.__helper.stix2_create_bundle(stix_objects)
 
-                if self.__config.debug:
+                if self.__config.ibm_xti.debug:
                     self.__helper.connector_logger.info(
                         "Created STIX bundle:", stix_objects_bundle
                     )
@@ -105,18 +116,16 @@ class ConnectorIBMXTI:
                     f"Sent {len(bundles_sent)} STIX bundles to OpenCTI"
                 )
 
-            if (
-                not self.__config.debug
-            ):  # this would only happen if no STIX objects are found, but we still shouldn't update the state in debug mode
-                with self.__state_lock:
-                    feed_state["added_after"] = new_added_after
-                    self.__helper.set_state(current_state)
-                    self.__helper.connector_logger.info(
-                        f"Updated 'added_after' to '{new_added_after}' for collection '{source.collection.title}'"
-                    )
+                if new_added_after:
+                    with self.__state_lock:
+                        feed_state["added_after"] = new_added_after
+                        self.__helper.set_state(current_state)
+                        self.__helper.connector_logger.info(
+                            f"Updated 'added_after' to '{new_added_after}' for collection '{source.collection.title}'"
+                        )
 
     def __ingest_feed(
-        self, source: TAXIICollectionSource, current_state: ConnectorIBMXTIState
+        self, source: TAXIICollectionSource, current_state: IBMXTIConnectorState
     ):
         t = Thread(
             target=self.__ingest_feed_helper, args=(source, current_state), daemon=True
@@ -125,7 +134,7 @@ class ConnectorIBMXTI:
 
         return t
 
-    def __collect_intelligence(self, current_state: Optional[ConnectorIBMXTIState]):
+    def __collect_intelligence(self, current_state: Optional[IBMXTIConnectorState]):
         """
         Collect intelligence from the source and convert into STIX object
         :return: List of STIX objects
@@ -136,13 +145,19 @@ class ConnectorIBMXTI:
         if not current_state:
             current_state = {}
 
-        if self.__config.taxii_collections and self.__config.taxii_collections.strip():
+        if (
+            self.__config.ibm_xti.taxii_collections
+            and self.__config.ibm_xti.taxii_collections.strip()
+        ):
             self.__helper.connector_logger.info(
                 "Retrieving data from specified collections only"
             )
 
             taxii_collection_ids = list(
-                map(lambda c: c.strip(), self.__config.taxii_collections.split(","))
+                map(
+                    lambda c: c.strip(),
+                    self.__config.ibm_xti.taxii_collections.split(","),
+                )
             )
 
             for collection_id in taxii_collection_ids:
@@ -177,14 +192,16 @@ class ConnectorIBMXTI:
 
         try:
             # Get the current state
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             current_timestamp = int(datetime.timestamp(now))
-            current_state = cast(ConnectorIBMXTIState, self.__helper.get_state())
+            current_state = cast(IBMXTIConnectorState, self.__helper.get_state())
 
             if current_state is not None and "last_run" in current_state:
+                last_run = current_state["last_run"]
+
                 self.__helper.connector_logger.info(
                     "[CONNECTOR] Connector last run",
-                    {"last_run_datetime": current_state["last_run"]},
+                    {"last_run_datetime": last_run},
                 )
             else:
                 self.__helper.connector_logger.info(
@@ -216,9 +233,9 @@ class ConnectorIBMXTI:
             )
             current_state = self.__helper.get_state()
             current_state_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
-            last_run_datetime = datetime.utcfromtimestamp(current_timestamp).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            last_run_datetime = datetime.fromtimestamp(
+                current_timestamp, tz=timezone.utc
+            ).strftime("%Y-%m-%d %H:%M:%S")
             if current_state:
                 current_state["last_run"] = current_state_datetime
             else:
@@ -230,7 +247,7 @@ class ConnectorIBMXTI:
                 + str(last_run_datetime)
             )
 
-            self.__helper.api.work.to_processed(work_id, message)
+            self.__helper.api.work.to_processed(work_id, message)  # type: ignore
             self.__helper.connector_logger.info(message)
 
         except (KeyboardInterrupt, SystemExit):
@@ -244,17 +261,17 @@ class ConnectorIBMXTI:
 
     def run(self) -> None:
         """
-        Run the main process encapsulated in a scheduler
-        It allows you to schedule the process to run at a certain intervals
-        This specific scheduler from the pycti connector helper will also check the queue size of a connector
-        If `CONNECTOR_QUEUE_THRESHOLD` is set, if the connector's queue size exceeds the queue threshold,
+        Start the connector, schedule its runs and trigger the first run.
+        It allows you to schedule the process to run at a certain interval.
+        This specific scheduler from the `OpenCTIConnectorHelper` will also check the queue size of a connector.
+        If `CONNECTOR_QUEUE_THRESHOLD` is set, and if the connector's queue size exceeds the queue threshold,
         the connector's main process will not run until the queue is ingested and reduced sufficiently,
         allowing it to restart during the next scheduler check. (default is 500MB)
-        It requires the `duration_period` connector variable in ISO-8601 standard format
-        Example: `CONNECTOR_DURATION_PERIOD=PT5M` => Will run the process every 5 minutes
-        :return: None
+
+        Example:
+            - If `CONNECTOR_DURATION_PERIOD=PT5M`, then the connector is running every 5 minutes.
         """
-        self.__helper.schedule_iso(
+        self.__helper.schedule_process(
             message_callback=self.process_message,
-            duration_period=self.__config.duration_period,  # type: ignore
+            duration_period=self.__config.connector.duration_period.total_seconds(),
         )

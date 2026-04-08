@@ -1,92 +1,231 @@
-# Shadowserver Connector
+# OpenCTI Shadowserver Connector
 
-The integration uses Shadowservers reports API to query the available Shadowserver reports and transform them into Stix objects making them available within OpenCTI. All available reports are downloaded and an `Artifact` object is created with the original file. Stix `Note` objects are added to both the `Report` and the `CustomObjectCaseIncident` with a mark-down rendition of each finding from the report.
+| Status    | Date | Comment |
+| --------- | ---- | ------- |
+| Community | -    | -       |
 
-API and report references from The Shadowserver Foundation
- - https://github.com/The-Shadowserver-Foundation/api_utils/wiki/API:-Reports-Query
- - https://interchange.shadowserver.org/schema/reports.json
+The Shadowserver connector imports security reports from The Shadowserver Foundation into OpenCTI.
 
- The integration creates the following types of Stix objects and relationships between them.
- - Artifact
- - AutonomousSystem
- - CustomObjectCaseIncident (optional)
- - DomainName
- - Identity
- - IPv4Address
- - IPv6Address
- - MACAddress
- - MarkingDefinition
- - NetworkTraffic
- - Note
- - ObservedData
- - Report
- - Vulnerability
- - X509Certificate
+## Table of Contents
 
-On the initial run, the integration defaults to the last 30-days of reports. Every run after that, it provides an update for the last 3-days.
+- [OpenCTI Shadowserver Connector](#opencti-shadowserver-connector)
+  - [Table of Contents](#table-of-contents)
+  - [Introduction](#introduction)
+  - [Installation](#installation)
+    - [Requirements](#requirements)
+  - [Configuration variables](#configuration-variables)
+    - [OpenCTI environment variables](#opencti-environment-variables)
+    - [Base connector environment variables](#base-connector-environment-variables)
+    - [Connector extra parameters environment variables](#connector-extra-parameters-environment-variables)
+  - [Deployment](#deployment)
+    - [Docker Deployment](#docker-deployment)
+    - [Manual Deployment](#manual-deployment)
+  - [Usage](#usage)
+  - [Behavior](#behavior)
+  - [Debugging](#debugging)
+  - [Additional information](#additional-information)
+
+## Introduction
+
+The [Shadowserver Foundation](https://www.shadowserver.org/) is a nonprofit security organization that gathers, analyzes, and freely shares cyber threat intelligence with network owners and national CERTs worldwide.
+
+This connector uses Shadowserver's Reports API to query available reports and transform them into STIX objects for OpenCTI. All available reports are downloaded, and an `Artifact` object is created with the original file. STIX `Note` objects are added to both the `Report` and `Case Incident` with a markdown rendition of each finding.
+
+**API and Report References:**
+
+- https://github.com/The-Shadowserver-Foundation/api_utils/wiki/API:-Reports-Query
+- https://interchange.shadowserver.org/schema/reports.json
 
 ## Installation
 
 ### Requirements
-- Subscribe to Shadowserver [https://www.shadowserver.org/what-we-do/network-reporting/get-reports/](Shadowserver Reports)
 
-### Configuration
+- OpenCTI Platform >= 6.x
+- [Shadowserver Reports subscription](https://www.shadowserver.org/what-we-do/network-reporting/get-reports/)
 
-Configuration parameters are provided using environment variables as described below.
-Some of them are placed directly in the `docker-compose.yml` since they are not expected to be modified by final users once that they have been defined by the developer of the connector.
+## Configuration variables
 
-Note that the values that follow can be grabbed within Python code using `self.helper.{PARAMETER}`, i. e., `self.helper.connector_nane`.
+Configuration parameters can be provided via **`.env`** file, **`config.yml`** file, or directly as **environment variables**.
 
-Expected environment variables to be set in the  `docker-compose.yml` that describe the connector itself.
-Most of the times, these values are NOT expected to be changed.
+**Priority**: YAML → .env → environment → defaults
 
-| Parameter                            | Docker envvar                       | Mandatory    | Description                                                                                                                                                |
-| ------------------------------------ | ----------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `connector_type`                     | `CONNECTOR_TYPE`                    | Yes          | Must be `EXTERNAL_IMPORT` (this is the connector type).                                                                                                    |
-| `connector_name`                     | `CONNECTOR_NAME`                    | Yes          | A connector name to be shown in OpenCTI.                                                                                                                   |
-| `connector_scope`                    | `CONNECTOR_SCOPE`                   | Yes          | Supported scope. E. g., `text/html`.                                                                                                                       |
+Find all the configuration variables available here: [Connector Configurations](./__metadata__/CONNECTOR_CONFIG_DOC.md)
 
-However, there are other values which are expected to be configured by end users.
-The following values are expected to be defined in the `.env` file.
-This file is included in the `.gitignore` to avoid leaking sensitive date).
-Note tha the `.env.sample` file can be used as a reference.
+_The `opencti` and `connector` options in the `docker-compose.yml` and `config.yml` are the same as for any other connector.
+For more information regarding variables, please refer to [OpenCTI's documentation on connectors](https://docs.opencti.io/latest/deployment/connectors/)._
 
-The ones that follow are connector's generic execution parameters expected to be added for export connectors.
+## Deployment
 
-| Parameter                            | Docker envvar                       | Mandatory    | Description                                                                                                                                                |
-| ------------------------------------ | ----------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `opencti_url`                        | `OPENCTI_URL`                       | Yes          | The URL of the OpenCTI platform. Note that final `/` should be avoided. Example value: `http://opencti:8080`                                               |
-| `opencti_token`                      | `OPENCTI_TOKEN`                     | Yes          | The default admin token configured in the OpenCTI platform parameters file.                                                                                |
-| `connector_id`                       | `CONNECTOR_ID`                      | Yes          | A valid arbitrary `UUIDv4` that must be unique for this connector.                                                                                         |
-| `connector_confidence_level`         | `CONNECTOR_CONFIDENCE_LEVEL`        | Yes          | The default confidence level for created sightings (a number between 1 and 4).                                                                             |
-| `connector_log_level`                | `CONNECTOR_LOG_LEVEL`               | Yes          | The log level for this connector, could be `debug`, `info`, `warn` or `error` (less verbose).                                                              |
-| `interval`                           | `CONNECTOR_RUN_EVERY`               | Yes          | The time unit is represented by a single character at the end of the string: d for days, h for hours, m for minutes, and s for seconds. e.g., 30s is 30 seconds. 1d is 1 day.                                                                                  |
-| `update_existing_data`               | `CONNECTOR_UPDATE_EXISTING_DATA`    | Yes          | Whether to update known existing data.                                                                                                                     |
+### Docker Deployment
 
+Build the Docker image:
 
-Finally, the ones that follow are connector's specific execution parameters expected to be used by this connector.
+```bash
+docker build -t opencti/connector-shadowserver:latest .
+```
 
-| Parameter                            | Docker envvar                       | Mandatory    | Description                                                                                                                                                |
-| ------------------------------------ | ----------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shadowserver_api_key`               | `SHADOWSERVER_API_KEY`              | Yes          | The API key for Shadowserver.                                                                                                                              |
-| `shadowserver_api_secret`            | `SHADOWSERVER_API_SECRET`           | Yes          | The API secret for Shadowserver.                                                                                                                           |
-| `shadowserver_marking`               | `SHADOWSERVER_MARKING`              | Yes          | The marking for the data, e.g., `TLP:CLEAR`, `TLP:GREEN`, `TLP:AMBER`, `TLP:RED`.                                                                                                               |
-| `shadowserver_create_incident`       | `SHADOWSERVER_CREATE_INCIDENT`      | Yes          | Whether to create an incident (`true` or `false`).                                                                                                         |
-| `shadowserver_incident_severity`     | `SHADOWSERVER_INCIDENT_SEVERITY`    | Yes          | The severity of the incident, e.g., `low` (Default: `low`).                                                                                                                 |
-| `shadowserver_incident_priority`     | `SHADOWSERVER_INCIDENT_PRIORITY`    | Yes          | The priority of the incident, e.g., `P4` (Default: `P4`).
+Configure the connector in `docker-compose.yml`:
 
-### Debugging ###
+```yaml
+connector-shadowserver:
+  image: opencti/connector-shadowserver:latest
+  environment:
+    - OPENCTI_URL=http://localhost
+    - OPENCTI_TOKEN=ChangeMe
+    - CONNECTOR_ID=ChangeMe
+    - CONNECTOR_NAME=Shadowserver
+    - CONNECTOR_SCOPE=stix2
+    - CONNECTOR_LOG_LEVEL=info
+    - CONNECTOR_DURATION_PERIOD=P1D
+    - SHADOWSERVER_API_KEY=ChangeMe
+    - SHADOWSERVER_API_SECRET=ChangeMe
+    - SHADOWSERVER_MARKING=TLP:CLEAR
+    - SHADOWSERVER_CREATE_INCIDENT=false
+  restart: always
+```
 
-The connector can be debugged by setting the appropiate log level.
-Note that logging messages can be added using `self.helper.log_{LOG_LEVEL}("Sample message")`, i. e., `self.helper.log_error("An error message")`.
+Start the connector:
 
-<!-- Any additional information to help future users debug and report detailed issues concerning this connector -->
+```bash
+docker compose up -d
+```
 
-### Additional information
+### Manual Deployment
 
-<!--
-Any additional information about this connector
-* What information is ingested/updated/changed
-* What should the user take into account when using this connector
-* ...
--->
+1. Create `config.yml` based on `config.yml.sample`.
+
+2. Install dependencies:
+
+```bash
+pip3 install -r requirements.txt
+```
+
+3. Start the connector:
+
+```bash
+python3 main.py
+```
+
+## Usage
+
+The connector runs automatically at the interval defined by `CONNECTOR_DURATION_PERIOD`. To force an immediate run:
+
+**Data Management → Ingestion → Connectors**
+
+Find the connector and click the refresh button to reset the state and trigger a new data fetch.
+
+## Behavior
+
+The connector fetches security reports from Shadowserver API and transforms them into STIX objects for OpenCTI.
+
+### Data Flow
+
+```mermaid
+graph LR
+    subgraph Shadowserver API
+        direction TB
+        Reports[Security Reports]
+        Findings[Report Findings]
+    end
+
+    subgraph OpenCTI
+        direction LR
+        Report[Report]
+        CaseIncident[Case Incident]
+        Artifact[Artifact]
+        Note[Note]
+        ObservedData[Observed Data]
+        IPv4[IPv4-Addr]
+        IPv6[IPv6-Addr]
+        Domain[Domain-Name]
+        MAC[MAC-Addr]
+        AS[Autonomous System]
+        Vuln[Vulnerability]
+        Cert[X509-Certificate]
+        NetTraffic[Network-Traffic]
+    end
+
+    Reports --> Report
+    Reports --> CaseIncident
+    Reports --> Artifact
+    Findings --> Note
+    Findings --> ObservedData
+    Findings --> IPv4
+    Findings --> IPv6
+    Findings --> Domain
+    Findings --> MAC
+    Findings --> AS
+    Findings --> Vuln
+    Findings --> Cert
+    Findings --> NetTraffic
+
+    Note -- object-ref --> Report
+    Note -- object-ref --> CaseIncident
+```
+
+### Entity Mapping
+
+The connector creates the following STIX objects and relationships:
+
+| Shadowserver Data | OpenCTI Entity        | Description                   |
+| ----------------- | --------------------- | ----------------------------- |
+| Report            | Report                | Security report with findings |
+| Report            | Case Incident         | Optional incident from report |
+| Report File       | Artifact              | Original report file          |
+| Finding           | Note                  | Markdown rendition of finding |
+| Finding Data      | Observed Data         | Observed data container       |
+| IP Address        | IPv4-Addr / IPv6-Addr | IP address observable         |
+| Domain            | Domain-Name           | Domain name observable        |
+| MAC Address       | MAC-Addr              | MAC address observable        |
+| ASN               | Autonomous System     | AS information                |
+| CVE               | Vulnerability         | Referenced vulnerability      |
+| Certificate       | X509-Certificate      | SSL/TLS certificate           |
+| Traffic Data      | Network-Traffic       | Network traffic information   |
+| Author            | Identity              | Shadowserver as author        |
+| TLP               | Marking Definition    | Configured TLP marking        |
+
+### Processing Details
+
+1. **Initial Run**: Imports last 30 days of reports
+2. **Subsequent Runs**: Updates with last 3 days of reports
+3. **Report Processing**:
+   - Downloads original report as Artifact
+   - Creates Report with summary
+   - Optionally creates Case Incident
+   - Parses findings into Notes with markdown tables
+   - Extracts observables from findings
+
+### Report Types
+
+Shadowserver provides various report types covering:
+
+- Open services (DNS, NTP, SSDP, etc.)
+- Vulnerable services
+- Botnet infections
+- Amplification attacks
+- Misconfigured devices
+- Compromised systems
+
+See [Shadowserver Report Schema](https://interchange.shadowserver.org/schema/reports.json) for details.
+
+## Debugging
+
+Enable verbose logging:
+
+```env
+CONNECTOR_LOG_LEVEL=debug
+```
+
+Logging can be added using:
+
+```python
+self.helper.connector_logger.{LOG_LEVEL}("Sample message", meta={})
+```
+
+## Additional information
+
+- **Subscription Required**: Shadowserver Reports subscription is required
+- **Initial Import**: First run imports 30 days of historical data
+- **Incremental Updates**: Subsequent runs import 3 days of data
+- **Nonprofit Data**: Shadowserver is a nonprofit security organization
+- **Reference**: [Shadowserver Foundation](https://www.shadowserver.org/)

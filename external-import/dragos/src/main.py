@@ -1,20 +1,48 @@
-import traceback
+"""Dragos Connector for OpenCTI."""
 
-from dragos import ConnectorDragos
+import traceback
+from datetime import timedelta
+from logging import getLogger
+
+from dragos.adapters.geocoding.octi import OctiGeocoding
+from dragos.adapters.report.dragos_v1 import ReportsAPIV1
+from dragos.connector import Connector
+from dragos.settings import ConnectorSettings
+from limiter import Limiter  # type: ignore[import-untyped]  # Limiter is not typed
+from pycti import (  # type: ignore[import-untyped]  # PyCTI is not typed
+    OpenCTIConnectorHelper,
+)
+from yarl import URL
+
+logger = getLogger(__name__)
 
 if __name__ == "__main__":
-    """
-    Entry point of the script
-
-    - traceback.print_exc(): This function prints the traceback of the exception to the standard error (stderr).
-    The traceback includes information about the point in the program where the exception occurred,
-    which is very useful for debugging purposes.
-    - exit(1): effective way to terminate a Python program when an error is encountered.
-    It signals to the operating system and any calling processes that the program did not complete successfully.
-    """
     try:
-        connector = ConnectorDragos()
-        connector.run()
+        settings = ConnectorSettings()
+        helper = OpenCTIConnectorHelper(config=settings.to_helper_config())
+        geocoding = OctiGeocoding(api_client=helper.api)
+        reports = ReportsAPIV1(
+            base_url=URL(str(settings.dragos.api_base_url)),
+            token=settings.dragos.api_token,
+            secret=settings.dragos.api_secret,
+            timeout=timedelta(seconds=30),
+            retry=3,
+            backoff=timedelta(seconds=1),
+            # bucket limiter set to 60 requests per minute
+            # burst 60 then 1 new token per second
+            rate_limiter=Limiter(
+                rate=1,
+                capacity=60,
+                bucket="dragos",
+            ),
+        )
+        connector = Connector(
+            config=settings,
+            helper=helper,
+            reports=reports,
+            geocoding=geocoding,
+        )
+        connector.start()
     except Exception:
         traceback.print_exc()
         exit(1)

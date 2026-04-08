@@ -58,6 +58,30 @@ class QRadarConnector:
         )
         self.headers = {"SEC": self.qradar_token}
 
+        try:
+            self._initialize_reference_sets()
+        except Exception as ex:
+            self.helper.connector_logger.error(
+                "Unable to initialize collection sets, shutting down { "
+                + str(ex)
+                + " }"
+            )
+            sys.exit(0)
+
+    def check_stream_id(self):
+        """
+        In case of stream_id configuration is missing, raise ValueError
+        """
+        if (
+            not self.helper.connect_live_stream_id
+            or self.helper.connect_live_stream_id.lower() == "changeme"
+        ):
+            raise ValueError("Missing stream ID, please check your configurations.")
+
+    def _initialize_reference_sets(self):
+        """
+        :return:
+        """
         # Collections sets
         self.collection_sets = {
             "ipv4-addr": {
@@ -116,6 +140,7 @@ class QRadarConnector:
         r = requests.get(
             url=self.base_url_sets, headers=self.headers, verify=self.qradar_ssl_verify
         )
+        r.raise_for_status()
         data = r.json()
         for key in self.collection_sets.keys():
             already_exist = False
@@ -133,6 +158,7 @@ class QRadarConnector:
                     headers=self.headers,
                     verify=self.qradar_ssl_verify,
                 )
+                r.raise_for_status()
                 result = r.json()
                 self.collection_sets[key]["qradar_id"] = result["id"]
 
@@ -181,7 +207,7 @@ class QRadarConnector:
             r.raise_for_status()
         except Exception as ex:
             self.helper.connector_logger.error(
-                "[Creating] Failed processing data {" + str(ex) + "}"
+                "[Creating] Failed processing data { " + str(ex) + " }"
             )
 
     def _update_object(self, collection_set_id, data):
@@ -211,7 +237,7 @@ class QRadarConnector:
                 r.raise_for_status()
         except Exception as ex:
             self.helper.connector_logger.error(
-                "[Updating] Failed processing data {" + str(ex) + "}"
+                "[Updating] Failed processing data { " + str(ex) + " }"
             )
 
     def _delete_object(self, collection_set_id, data):
@@ -227,7 +253,7 @@ class QRadarConnector:
                 r.raise_for_status()
         except Exception as ex:
             self.helper.connector_logger.error(
-                "[Deleting] Failed processing data {" + str(ex) + "}"
+                "[Deleting] Failed processing data { " + str(ex) + " }"
             )
 
     def _process_indicator(self, data):
@@ -332,7 +358,7 @@ class QRadarConnector:
                         self.helper.connector_logger.error(
                             "[Processing] Cannot find the QRadar collection set for { "
                             + d["type"]
-                            + "}"
+                            + " }"
                         )
                     else:
                         if msg.event == "create":
@@ -343,14 +369,15 @@ class QRadarConnector:
                             self._delete_object(collection_set_id, d)
         except Exception as ex:
             self.helper.connector_logger.error(
-                "[Processing] Failed processing data {" + str(ex) + "}"
+                "[Processing] Failed processing data { " + str(ex) + " }"
             )
             self.helper.connector_logger.error(
-                "[Processing] Message data {" + str(msg) + "}"
+                "[Processing] Message data { " + str(msg) + " }"
             )
             return None
 
     def start(self):
+        self.check_stream_id()
         self.helper.listen_stream(self._process_message)
 
 

@@ -78,9 +78,6 @@ class ImportFileYARA:
             object_marking_refs=[],
             external_references=external_references,
             created=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            valid_from=datetime.datetime.now(datetime.UTC).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            ),
             custom_properties={
                 "x_opencti_main_observable_type": "StixFile",
                 "x_opencti_score": 100,
@@ -101,7 +98,7 @@ class ImportFileYARA:
             )
             for rule in parsing_result:
                 rule_name = rule.get("rule_name")
-                rule_metadata = rule.get("metadata")
+                rule_metadata = rule.get("metadata", [])
                 self.helper.log_debug(f"Processing rule name : {rule_name}")
                 yara_content = rebuild_yara_rule(rule, condition_indents=True)
                 stix_indicator = self._convert_yara_rule_to_stix_indicator(

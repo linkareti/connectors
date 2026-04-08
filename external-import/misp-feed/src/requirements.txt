@@ -1,3 +1,3 @@
-pycti==6.5.1
-urllib3==2.2.2
-boto3==1.36.19
+pycti==7.260401.0
+boto3
+connectors-sdk @ git+https://github.com/OpenCTI-Platform/connectors.git@master#subdirectory=connectors-sdk

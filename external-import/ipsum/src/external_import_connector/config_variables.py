@@ -20,11 +20,10 @@ class ConfigConnector:
         :return: Configuration dictionary
         """
         config_file_path = Path(__file__).parents[1].joinpath("config.yml")
-        config = (
-            yaml.load(open(config_file_path), Loader=yaml.FullLoader)
-            if os.path.isfile(config_file_path)
-            else {}
-        )
+        config = {}
+        if os.path.isfile(config_file_path):
+            with open(config_file_path, encoding="utf-8") as f:
+                config = yaml.load(f, Loader=yaml.FullLoader)
 
         return config
 
@@ -59,4 +58,12 @@ class ConfigConnector:
             ["connector_ipsum", "api_key"],
             self.load,
             required=False,
+        )
+
+        self.tlp_level = get_config_variable(
+            "CONNECTOR_IPSUM_TLP_LEVEL",
+            ["connector_ipsum", "tlp_level"],
+            self.load,
+            required=False,
+            default="white",
         )

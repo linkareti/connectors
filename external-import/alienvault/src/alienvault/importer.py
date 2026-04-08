@@ -118,6 +118,13 @@ class PulseImporter:
         self._info("{0} pulse(s) since {1}...", pulse_count, latest_pulse_datetime)
 
         if self.filter_indicators:
+            """
+            If filtering is enabled, go over each "pulse".
+            Remove any indicators older than latest_pulse_datetime which is stored in connector state.
+            Keep track of how many were removed and how many are left.
+            Log details after each pulse and give a summary at the end.
+            Use case: Ensuring only recent indicators are processed
+            """
             total_remaining = 0
             total_filtered = 0
             for i, pulse in enumerate(pulses, start=1):
@@ -318,15 +325,15 @@ class PulseImporter:
         return malwares
 
     def _fetch_malware_standard_id_by_name(self, name: str) -> Optional[str]:
-        filtersList = [
+        filters_list = [
             self._create_filter("name", name),
             self._create_filter("aliases", name),
         ]
-        for _filter in filtersList:
+        for _filter in filters_list:
             malwares = self.helper.api.malware.list(filters=_filter)
             if malwares:
                 if len(malwares) > 1:
-                    self._info("More then one malware for '{0}'", name)
+                    self._info("More than one malware for '{0}'", name)
                 malware = malwares[0]
                 return malware["standard_id"]
         return None

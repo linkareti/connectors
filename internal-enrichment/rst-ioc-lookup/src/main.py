@@ -18,14 +18,17 @@ class RSTIocLookupConnector:
         # Load config
         config_file_path = os.path.dirname(os.path.abspath(__file__)) + "/config.yml"
         config = (
-            yaml.safe_load(open(config_file_path))
+            yaml.safe_load(open(config_file_path, encoding="UTF-8"))
             if os.path.isfile(config_file_path)
             else {}
         )
         self.helper = OpenCTIConnectorHelper(config, True)
         self.base_url = str(
             get_config_variable(
-                "RST_IOC_LOOKUP_BASE_URL", ["rst-ioc-lookup", "base_url"], config
+                "RST_IOC_LOOKUP_BASE_URL",
+                ["rst-ioc-lookup", "base_url"],
+                config,
+                default="https://api.rstcloud.net/v1",
             )
         )
         self.api_key = str(
@@ -127,6 +130,20 @@ class RSTIocLookupConnector:
         self.helper.log_info(f"update_confidence {self.update_confidence}")
         self.helper.log_info(f"detection_flag {self.detection_flag_threshold}")
 
+    @staticmethod
+    def calculate_new_valid_until(
+        valid_from: str, valid_until: str, new_valid_from: str
+    ) -> str:
+        # copies the time difference from the previous valid_from, valid_until values to the new one
+        # returns the updated valid_until
+        format_str = "%Y-%m-%dT%H:%M:%S.%fZ"
+        start_time = datetime.strptime(valid_from, format_str)
+        end_time = datetime.strptime(valid_until, format_str)
+        time_difference = end_time - start_time
+        new_start_time = datetime.strptime(new_valid_from, format_str)
+        new_end_time = new_start_time + time_difference
+        return new_end_time.strftime(format_str)[:-4] + "Z"
+
     def format_tag(self, tag):
         # for compatibility with other sources
         # we may need the suffixes removed
@@ -153,7 +170,21 @@ class RSTIocLookupConnector:
             # do not use the RST Cloud's decay algorithm
             # the score is set based on the last value
             # calculated by RST Cloud on a last seen day
-            new_score = int(resp["score"]["last"])
+            last_score = resp["score"].get("last")
+            if last_score is not None:
+                new_score = int(last_score)
+            else:
+                # fallback to total if last is missing
+                new_score = int(resp["score"]["total"])
+        elif self.score_type == "first":
+            # use the score for the IoC on the day it was first seen
+            # within the last period of activity
+            first_score = resp["score"].get("first")
+            if first_score is not None:
+                new_score = int(first_score)
+            else:
+                # fallback to total if first is missing
+                new_score = int(resp["score"]["total"])
         elif self.score_type == "total":
             # use the RST Cloud's decay algorithm
             # the score is set to the currect score value
@@ -239,8 +270,6 @@ class RSTIocLookupConnector:
                 continue
 
             if self.update_score:
-                if "x_opencti_score" not in obj:
-                    obj["x_opencti_score"] = 0
                 new_score = self.extract_score(resp)
                 obj = OpenCTIStix2.put_attribute_in_extension(
                     obj, STIX_EXT_OCTI_SCO, "score", new_score
@@ -264,7 +293,12 @@ class RSTIocLookupConnector:
                 raise ValueError("Unsupported description update action")
 
             external_references = list()
-            for ref in resp["src"]["report"].split(","):
+            src_reports = (
+                resp["src"]["report"]
+                if isinstance(resp["src"]["report"], list)
+                else resp["src"]["report"].split(",")
+            )
+            for ref in src_reports:
                 ref_name = urlparse(ref).netloc
                 if ref_name.strip() == "":
                     ref_name = ref
@@ -283,9 +317,6 @@ class RSTIocLookupConnector:
                     obj["x_opencti_score"] = 0
                 new_score = self.extract_score(resp)
                 obj["x_opencti_score"] = new_score
-                obj = OpenCTIStix2.put_attribute_in_extension(
-                    obj, STIX_EXT_OCTI_SCO, "score", new_score
-                )
                 # if self.detection_flag_threshold == 0, then do not change
                 # if more than 0 use as a threshold to update detection flag
                 if self.detection_flag_threshold and self.detection_flag_threshold > 0:
@@ -314,19 +345,30 @@ class RSTIocLookupConnector:
 
             # update valid from using last_seen
             # this pushes the date forward setting it to the newest date
-            # help to keep an indicator in an active state (revoked = true)
-            # if it is still being reported as malcious
+            # help to keep an indicator in an active state (revoked = false)
+            # when it is still being reported as malicious
             if self.update_valid_from:
                 valid_from_dt = datetime.fromtimestamp(int(resp["lseen"]), timezone.utc)
                 valid_from = valid_from_dt.isoformat(timespec="milliseconds")
-                obj["valid_from"] = valid_from.replace("+00:00", "Z")
+                valid_from = valid_from.replace("+00:00", "Z")
+                valid_until = self.calculate_new_valid_until(
+                    obj["valid_from"], obj["valid_until"], valid_from
+                )
+                obj["valid_from"] = valid_from
+                obj["valid_until"] = valid_until
+                obj["revoked"] = False
 
             obj = OpenCTIStix2.put_attribute_in_extension(
                 obj, STIX_EXT_OCTI_SCO, "labels", labels, False
             )
 
             external_references = list()
-            for ref in resp["src"]["report"].split(","):
+            src_reports = (
+                resp["src"]["report"]
+                if isinstance(resp["src"]["report"], list)
+                else resp["src"]["report"].split(",")
+            )
+            for ref in src_reports:
                 ref_name = urlparse(ref).netloc
                 if ref_name.strip() == "":
                     ref_name = ref
@@ -337,7 +379,7 @@ class RSTIocLookupConnector:
     def _process_message(self, data: Dict) -> str:
         opencti_entity = data["enrichment_entity"]
 
-        tlp = "TLP:CLEAR"
+        tlp = "TLP:WHITE"
         for marking_definition in opencti_entity.get("objectMarking", []):
             if marking_definition["definition_type"] == "TLP":
                 tlp = marking_definition["definition"]
@@ -379,6 +421,7 @@ class RSTIocLookupConnector:
         for value in values:
             url = self.base_url + "/ioc"
             headers = {
+                "User-Agent": "opencti_rst_ioc_lookup",
                 "Content-Type": "application/json",
                 "x-api-key": self.api_key,
             }

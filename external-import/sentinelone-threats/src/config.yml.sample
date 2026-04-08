@@ -1,13 +1,12 @@
 opencti:
-  url: 'ChangeMe'
+  url: 'http://localhost'
   token: 'ChangeMe'
 
 connector:
-  id: 'sentinelone-threats'
   type: 'EXTERNAL_IMPORT'
+  id: 'sentinelone-threats'
   name: 'SentinelOne Threats'
   scope: 'sentinelone-threats'
-  confidence_level: 50 # From 0 (Unknown) to 100 (Fully trusted)
   create_indicator: False
   update_existing_data: false
   log_level: 'info'

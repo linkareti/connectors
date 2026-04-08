@@ -95,7 +95,18 @@ class JiraConnector:
         self.jira_client = JIRA(
             server=self.jira_url,
             basic_auth=(self.jira_login_email, self.jira_api_token),
+            options={"verify": self.jira_ssl_verify},
         )
+
+    def check_stream_id(self):
+        """
+        In case of stream_id configuration is missing, raise ValueError
+        """
+        if (
+            not self.helper.connect_live_stream_id
+            or self.helper.connect_live_stream_id.lower() == "changeme"
+        ):
+            raise ValueError("Missing stream ID, please check your configurations.")
 
     def _process_message(self, msg):
         try:
@@ -140,6 +151,7 @@ class JiraConnector:
             self.helper.log_error(str(e))
 
     def start(self):
+        self.check_stream_id()
         self.helper.listen_stream(self._process_message)
 
 

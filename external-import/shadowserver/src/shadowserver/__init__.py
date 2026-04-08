@@ -1,4 +1,11 @@
-from .api import ShadowserverAPI
-from .utils import get_tlp_keys, remove_duplicates
+from shadowserver.api import ShadowserverAPI
+from shadowserver.connector import CustomConnector
+from shadowserver.settings import ConnectorSettings
+from shadowserver.utils import remove_duplicates
 
-__all__ = ["ShadowserverAPI", "get_tlp_keys", "remove_duplicates"]
+__all__ = [
+    "ShadowserverAPI",
+    "remove_duplicates",
+    "ConnectorSettings",
+    "CustomConnector",
+]

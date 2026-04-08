@@ -3,16 +3,15 @@ import hmac
 import json
 import logging
 from json import JSONDecodeError
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests
 from pycti import OpenCTIConnectorHelper
 from requests.exceptions import RequestException
-
-from .constants import BASE_URL, LIMIT, TIMEOUT, TLP_MAP
-from .stix_transform import ShadowserverStixTransformation
-from .utils import validate_date_format, validate_marking_refs
+from shadowserver.constants import BASE_URL, DOWNLOAD_URL, LIMIT, TIMEOUT, TLP_MAP
+from shadowserver.stix_transform import ShadowserverStixTransformation
+from shadowserver.utils import from_csv_to_list, validate_date_format
 
 LOGGER = logging.getLogger(__name__)
 
@@ -22,7 +21,7 @@ class ShadowserverAPI:
     This class interacts with the Shadowserver API to retrieve and process reports.
     """
 
-    def __init__(self, api_key: str, api_secret: str, marking_refs: str = "TLP:WHITE"):
+    def __init__(self, api_key: str, api_secret: str, marking_refs: str):
         """
         Initializes a new instance of the API class.
 
@@ -37,10 +36,7 @@ class ShadowserverAPI:
         self.base_url = BASE_URL
         self.api_key = api_key
         self.api_secret = api_secret
-        if validate_marking_refs(marking_refs):
-            self.marking_refs = TLP_MAP[marking_refs]
-        else:
-            raise ValueError(f"Invalid marking references: {marking_refs}")
+        self.marking_refs = TLP_MAP[marking_refs]
         self.session = requests.Session()
 
     def _generate_hmac(self, request: dict) -> Tuple[bytes, str]:
@@ -94,7 +90,7 @@ class ShadowserverAPI:
         date: Optional[str] = None,
         limit: int = 1000,
         reports: Optional[List[str]] = None,
-        type: Optional[str] = None,
+        type: Optional[str | List[str]] = None,
     ) -> Optional[Dict]:
         """
         Submit API request to retrieve a list of reports.
@@ -103,7 +99,7 @@ class ShadowserverAPI:
             date (str, optional): The date for which to retrieve reports. Defaults to None.
             limit (int, optional): The maximum number of reports to retrieve. Defaults to 1000.
             reports (list, optional): A list of report names to retrieve. Defaults to None.
-            type (str, optional): The type of reports to retrieve. Defaults to None.
+            type (str or list, optional): The type(s) of reports to retrieve. Defaults to None.
 
         Returns:
             dict or None: The JSON response from the request, or None if an error occurred.
@@ -120,22 +116,24 @@ class ShadowserverAPI:
 
         return self._request(uri_path="reports/list", request=request)
 
-    def get_report(
-        self, report_id: str, report: str, limit: int = LIMIT
-    ) -> Optional[Dict]:
+    def get_report(self, report_id: str) -> bytes:
         """
-        Submit API request to download a report.
+        Download a report file from Shadowserver.
 
         Args:
-            report_id (str): The ID of the report.
-            report (str): The name of the report.
-            limit (int, optional): The maximum number of records to retrieve. Defaults to LIMIT.
-
+            report_id (str): Report identifier returned by reports/list.
         Returns:
-            dict or None: The response from the API.
+            bytes: The content of the downloaded report file.
         """
-        request = {"report": report, "id": report_id, "limit": limit}
-        return self._request(uri_path="reports/download", request=request)
+        url = urljoin(DOWNLOAD_URL, report_id)
+
+        try:
+            response = self.session.get(url, timeout=TIMEOUT)
+            response.raise_for_status()
+            return response.content
+        except RequestException as e:
+            LOGGER.error(f"Failed to download report {report_id}: {e}")
+            return b""
 
     def get_subscriptions(self) -> Optional[Dict]:
         """
@@ -153,7 +151,7 @@ class ShadowserverAPI:
         limit: int = LIMIT,
         incident: dict = {},
         labels: List[str] = ["Shadowserver"],
-    ) -> Optional[Dict]:
+    ) -> list[Any]:
         """
         Retrieves a STIX report based on the specified report parameters.
 
@@ -164,7 +162,7 @@ class ShadowserverAPI:
             labels (list, optional): Labels to apply to the STIX objects. Defaults to ['Shadowserver'].
 
         Returns:
-            dict or None: The retrieved STIX report in dictionary format, or None if an error occurred.
+            list: A list of STIX objects.
         """
         if not report.get("id") or not report.get("report"):
             raise ValueError(f"Invalid report: {report}")
@@ -172,11 +170,11 @@ class ShadowserverAPI:
         LOGGER.debug(
             f"Getting report: {report.get('id')}, {report.get('report')}, {limit}"
         )
-        report_list = self.get_report(
-            report_id=report.get("id"), report=report.get("report"), limit=limit
-        )
+        csv_content = self.get_report(report_id=report.get("id"))
 
-        if report_list:
+        if csv_content:
+            # Parse CSV content into list of dictionaries
+            report_list = from_csv_to_list(csv_content)
             LOGGER.debug(f"Report list length: {len(report_list)}")
             stix_transformation = ShadowserverStixTransformation(
                 marking_refs=self.marking_refs,
@@ -188,4 +186,4 @@ class ShadowserverAPI:
             )
             return stix_transformation.get_stix_objects()
         else:
-            return None
+            return []

@@ -1,13 +1,12 @@
 opencti:
-  url: 'http://localhost:8080'
+  url: 'http://localhost'
   token: 'ChangeMe'
 
 connector:
-  id: 'ChangeMe'
   type: 'EXTERNAL_IMPORT'
+  id: 'ChangeMe'
   name: 'OpenCTI Datasets'
   scope: 'marking-definition,identity,location'
-  confidence_level: 100
   update_existing_data: true
   run_and_terminate: false
   log_level: 'info'

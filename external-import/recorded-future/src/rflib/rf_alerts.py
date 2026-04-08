@@ -1,10 +1,9 @@
 import base64
-import datetime
 import threading
+from datetime import datetime, timezone
 from re import search
 
 import pycti
-import pytz
 import stix2
 from pycti import (
     CustomObjectChannel,
@@ -14,7 +13,8 @@ from pycti import (
 )
 
 from .constants import TLP_MAP
-from .make_markdown_table import make_markdown_table
+from .pyrf import Alert, RecordedFutureApiClient, RecordedFutureApiError
+from .utils import is_ip_v4_address, is_ip_v6_address, make_markdown_table
 
 
 class Vocabulary:
@@ -24,11 +24,17 @@ class Vocabulary:
 
 
 class RecordedFutureAlertConnector(threading.Thread):
-    def __init__(self, helper, rf_alerts_api, opencti_default_severity, tlp):
+    def __init__(
+        self,
+        helper: pycti.OpenCTIConnectorHelper,
+        rf_alerts_api: RecordedFutureApiClient,
+        opencti_default_severity: str,
+        tlp: str,
+    ):
         threading.Thread.__init__(self)
         self.helper = helper
 
-        self.helper.log_info(
+        self.helper.connector_logger.info(
             "Starting Recorded Future Alert connector module initialization"
         )
 
@@ -126,73 +132,85 @@ class RecordedFutureAlertConnector(threading.Thread):
                 }
             )
 
+    def collect_alerts(self, since: datetime) -> list[Alert]:
+        """
+        Collects alerts from Recorded Future API based on the provided time range.
+
+        :param since: The start datetime for collecting alerts.
+        :return: A list of Alert objects.
+        """
+        alerts = []
+        for rule in self.api_recorded_future.priorited_rules:
+            try:
+                rule_alerts = self.api_recorded_future.get_alerts(
+                    rule=rule, since=since
+                )
+                alerts.extend(rule_alerts)
+
+                self.helper.connector_logger.info(
+                    f"{len(rule_alerts)} alert(s) found",
+                    {
+                        "rule_id": rule.rule_id,
+                        "rule_name": rule.rule_name,
+                        "since": since,
+                        "alerts_count": len(rule_alerts),
+                    },
+                )
+            except RecordedFutureApiError as err:
+                message = f"Skipping alerts for rule '{rule.rule_name}' due to RecordedFuture API error"
+                self.helper.connector_logger.error(
+                    message,
+                    {
+                        "error": err,
+                        "rule_id": rule.rule_id,
+                        "rule_name": rule.rule_name,
+                        "since": since,
+                    },
+                )
+                continue
+
+        return alerts
+
     def run(self):
+        """
+        Main process to collect, transform and send intelligence to OpenCTI.
+        :return: None
+        """
+        now = datetime.now(tz=timezone.utc)
+
         self.work_id = self.helper.api.work.initiate_work(
-            self.helper.connect_id,
-            "Recorded Future Alerts",
+            connector_id=self.helper.connector_id,
+            friendly_name="Recorded Future Alerts",
         )
 
-        self.update_rules()
-        timestamp = datetime.datetime.now(pytz.timezone("UTC"))
-        current_state = self.helper.get_state()
-        if current_state is not None and "last_alert_run" in current_state:
-            current_state_datetime = datetime.datetime.strptime(
-                current_state["last_alert_run"], "%Y-%m-%dT%H:%M:%S"
+        try:
+            # Populate self.api_recorded_future.priorited_rules list
+            self.update_rules()
+
+            current_state = self.helper.get_state() or {}
+
+            # Migrate old state key to new name
+            if "last_alerts_run" in current_state:
+                if "last_processed_alert_date" not in current_state:
+                    current_state["last_processed_alert_date"] = current_state[
+                        "last_alerts_run"
+                    ]
+                del current_state["last_alerts_run"]
+                self.helper.set_state(current_state)
+
+            state_last_processed_alert_date = current_state.get(
+                "last_processed_alert_date"
             )
-            if current_state_datetime.date() == datetime.datetime.today().date():
-                self.run_for_time_period(
-                    trigger=str(datetime.datetime.today().date()),
-                    after=current_state["last_alert_run"],
-                )
-                for alert in self.api_recorded_future.alerts:
-                    try:
-                        self.alert_to_incident(alert)
-                    except Exception as err:
-                        self.helper.connector_logger.error(
-                            "Incident cannot be created",
-                            {"alert_id": alert.alert_id, "error_msg": str(err)},
-                        )
-                    timestamp_checkpoint = datetime.datetime.now(pytz.timezone("UTC"))
-                    self.helper.set_state(
-                        {
-                            "last_alert_run": timestamp_checkpoint.strftime(
-                                "%Y-%m-%dT%H:%M:%S"
-                            )
-                        }
-                    )
+            if state_last_processed_alert_date is None:
+                last_processed_alert_date = None
             else:
-                local_alerts = []
-                self.run_for_time_period(
-                    trigger=str(current_state_datetime.date()),
-                    after=current_state["last_alert_run"],
-                )
-                local_alerts.extend(self.api_recorded_future.alerts)
-                day_delta = (
-                    datetime.datetime.today().date() - current_state_datetime.date()
-                )
-                for i in range(1, day_delta.days + 1):
-                    day = current_state_datetime.date() + datetime.timedelta(days=i)
-                    self.run_for_time_period(trigger=str(day))
-                    local_alerts.extend(self.api_recorded_future.alerts)
-                for alert in local_alerts:
-                    try:
-                        self.alert_to_incident(alert)
-                    except Exception as err:
-                        self.helper.connector_logger.error(
-                            "Incident cannot be created",
-                            {"alert_id": alert.alert_id, "error_msg": str(err)},
-                        )
-                    timestamp_checkpoint = datetime.datetime.now(pytz.timezone("UTC"))
-                    self.helper.set_state(
-                        {
-                            "last_alert_run": timestamp_checkpoint.strftime(
-                                "%Y-%m-%dT%H:%M:%S"
-                            )
-                        }
-                    )
-        else:
-            self.run_for_time_period(trigger=str(datetime.datetime.today().date()))
-            for alert in self.api_recorded_future.alerts:
+                last_processed_alert_date = datetime.fromisoformat(
+                    state_last_processed_alert_date
+                ).replace(tzinfo=timezone.utc)
+
+            alerts = self.collect_alerts(since=last_processed_alert_date or now)
+            alerts.sort(key=lambda a: a.alert_date or "")
+            for alert in alerts:
                 try:
                     self.alert_to_incident(alert)
                 except Exception as err:
@@ -200,20 +218,25 @@ class RecordedFutureAlertConnector(threading.Thread):
                         "Incident cannot be created",
                         {"alert_id": alert.alert_id, "error_msg": str(err)},
                     )
-                timestamp_checkpoint = datetime.datetime.now(pytz.timezone("UTC"))
-                self.helper.set_state(
-                    {
-                        "last_alert_run": timestamp_checkpoint.strftime(
-                            "%Y-%m-%dT%H:%M:%S"
-                        )
-                    }
-                )
+                    continue
 
-        self.helper.set_state(
-            {"last_alert_run": timestamp.strftime("%Y-%m-%dT%H:%M:%S")}
-        )
-        message = f"{self.helper.connect_name} connector successfully run for Recorded Future Alerts"
-        self.helper.api.work.to_processed(self.work_id, message)
+                current_state = self.helper.get_state() or {}
+                checkpoint = (
+                    datetime.fromisoformat(alert.alert_date)
+                    if alert.alert_date
+                    else now
+                )
+                current_state["last_processed_alert_date"] = checkpoint.isoformat(
+                    timespec="milliseconds"
+                )
+                self.helper.set_state(current_state)
+
+            message = f"{self.helper.connect_name} connector successfully run for Recorded Future Alerts"
+            self.helper.api.work.to_processed(self.work_id, message)
+
+        except Exception as err:
+            self.helper.connector_logger.error(str(err))
+            self.helper.api.work.to_processed(self.work_id, str(err), in_error=True)
 
     def alert_to_incident(self, alert):
         external_files = []
@@ -292,24 +315,42 @@ class RecordedFutureAlertConnector(threading.Thread):
                         },
                     )
                     stix_relationship = self._generate_stix_relationship(
-                        stix_incident.id, "related-to", stix_url.id
+                        stix_url.id, "related-to", stix_incident.id
                     )
                     bundle_objects.append(stix_url)
                     bundle_objects.append(stix_relationship)
 
                 elif entity["type"] == "IpAddress":
-                    stix_ipv4address = stix2.IPv4Address(
-                        value=entity["name"],
-                        object_marking_refs=self.tlp,
-                        custom_properties={
-                            "x_opencti_created_by_ref": self.author["id"],
-                        },
-                    )
-                    stix_relationship = self._generate_stix_relationship(
-                        stix_incident.id, "related-to", stix_ipv4address.id
-                    )
-                    bundle_objects.append(stix_ipv4address)
-                    bundle_objects.append(stix_relationship)
+                    stix_ip_address = None
+                    ip_address_value = entity["name"]
+                    if is_ip_v4_address(ip_address_value):
+                        stix_ip_address = stix2.IPv4Address(
+                            value=ip_address_value,
+                            object_marking_refs=self.tlp,
+                            custom_properties={
+                                "x_opencti_created_by_ref": self.author["id"],
+                            },
+                        )
+                    elif is_ip_v6_address(ip_address_value):
+                        stix_ip_address = stix2.IPv6Address(
+                            value=ip_address_value,
+                            object_marking_refs=self.tlp,
+                            custom_properties={
+                                "x_opencti_created_by_ref": self.author["id"],
+                            },
+                        )
+                    else:
+                        self.helper.connector_logger.warning(
+                            "Invalid IP address, the entity will be skipped.",
+                            {"ip_address": ip_address_value},
+                        )
+
+                    if stix_ip_address:
+                        stix_relationship = self._generate_stix_relationship(
+                            stix_ip_address.id, "related-to", stix_incident.id
+                        )
+                        bundle_objects.append(stix_ip_address)
+                        bundle_objects.append(stix_relationship)
                 elif entity["type"] == "EmailAddress":
                     stix_emailaddress = stix2.EmailAddress(
                         value=entity["name"],
@@ -319,7 +360,7 @@ class RecordedFutureAlertConnector(threading.Thread):
                         },
                     )
                     stix_relationship = self._generate_stix_relationship(
-                        stix_incident.id, "related-to", stix_emailaddress.id
+                        stix_emailaddress.id, "related-to", stix_incident.id
                     )
                     bundle_objects.append(stix_emailaddress)
                     bundle_objects.append(stix_relationship)
@@ -332,7 +373,7 @@ class RecordedFutureAlertConnector(threading.Thread):
                         },
                     )
                     stix_relationship = self._generate_stix_relationship(
-                        stix_incident.id, "related-to", stix_domain.id
+                        stix_domain.id, "related-to", stix_incident.id
                     )
                     bundle_objects.append(stix_domain)
                     bundle_objects.append(stix_relationship)
@@ -393,7 +434,7 @@ class RecordedFutureAlertConnector(threading.Thread):
                             in str(hit["document"]["source"]["name"]).lower()
                         ):
                             value = search(
-                                "(https:\/\/t.me\/.+?(?=\/))|(https:\/\/twitter.com\/.+?(?=\/))",
+                                r"(https:\/\/t.me\/.+?(?=\/))|(https:\/\/twitter.com\/.+?(?=\/))",
                                 hit["document"]["url"],
                             )
                             if value is None:
@@ -426,7 +467,7 @@ class RecordedFutureAlertConnector(threading.Thread):
                     },
                 )
                 stix_relationship = self._generate_stix_relationship(
-                    stix_incident.id, "related-to", stix_text.id
+                    stix_text.id, "related-to", stix_incident.id
                 )
                 bundle_objects.append(stix_text)
                 bundle_objects.append(stix_relationship)
@@ -438,7 +479,7 @@ class RecordedFutureAlertConnector(threading.Thread):
                     },
                 )
                 stix_relationship = self._generate_stix_relationship(
-                    stix_incident.id, "related-to", stix_url_doc.id
+                    stix_url_doc.id, "related-to", stix_incident.id
                 )
                 bundle_objects.append(stix_url_doc)
                 bundle_objects.append(stix_relationship)
@@ -467,7 +508,7 @@ class RecordedFutureAlertConnector(threading.Thread):
                     },
                 )
                 stix_relationship = self._generate_stix_relationship(
-                    stix_incident.id, "related-to", stix_user.id
+                    stix_user.id, "related-to", stix_incident.id
                 )
                 bundle_objects.append(stix_user)
                 bundle_objects.append(stix_relationship)
@@ -488,10 +529,8 @@ class RecordedFutureAlertConnector(threading.Thread):
                     bundle_objects.append(stix_relationship)
             stix_note = stix2.Note(
                 id=pycti.Note.generate_id(
-                    hit_note,
-                    datetime.datetime.now(pytz.timezone("UTC")).strftime(
-                        "%Y-%m-%dT%H:%M:%S"
-                    ),
+                    created=None,
+                    content=hit_note,
                 ),
                 object_marking_refs=self.tlp,
                 abstract=str(
@@ -518,25 +557,3 @@ class RecordedFutureAlertConnector(threading.Thread):
             update=True,
             work_id=self.work_id,
         )
-
-    def run_for_time_period(self, trigger, after=None):
-        assert isinstance(
-            trigger, str
-        ), "Date must be a string with any format between : yyyy to yyyy-MM-dd'T'HH:mm:ss'Z'"
-        self.recordedfuture_alert_time = trigger
-
-        self.api_recorded_future.alerts = []
-        self.api_recorded_future.get_alert_by_rule_and_by_trigger(
-            self.recordedfuture_alert_time, after=after
-        )
-        if len(self.api_recorded_future.alerts) == 0:
-            self.helper.log_info("[" + str(trigger) + "] No alert found : exiting")
-        else:
-            self.helper.log_info(
-                "["
-                + str(trigger)
-                + "] "
-                + str(len(self.api_recorded_future.alerts))
-                + " alerts were found"
-            )
-        return
