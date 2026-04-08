@@ -49,9 +49,7 @@
 
     <modules>
         <module>external-import/dragos</module>
-        <module>internal-enrichment/censys</module>
         <module>external-import/arctichub</module>
-        <module>external-import/spycloud</module>
         <module>external-import/group-ib</module>
     </modules>
 
