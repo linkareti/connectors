@@ -48,7 +48,6 @@
     </properties>
 
     <modules>
-        <module>external-import/dragos</module>
         <module>external-import/arctichub</module>
         <module>external-import/group-ib</module>
     </modules>
