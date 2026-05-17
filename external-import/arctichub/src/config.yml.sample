@@ -5,30 +5,25 @@ opencti:
 connector:
   id: 'ChangeMe'
   type: 'EXTERNAL_IMPORT'
-  name: 'External Import Connector Arctichub'
-  scope: 'ChangeMe'
+  name: 'Arctic Hub'
+  scope: 'arctichub'
   log_level: 'info'
-  duration_period: 'PT24H' # Interval given for scheduler process in ISO-8601 format
+  duration_period: 'P1D'  # ISO-8601 duration: daily
   update_existing_data: false
-  #============================================#
-  # Optional connector's definition parameters #
-  #============================================#
-  #queue_threshold: 500
-  #run_and_terminate: 'False'
-  #send_to_queue: 'True'
-  #send_to_directory: 'False'
-  #send_to_directory_path: 'ChangeMe'
-  #send_to_directory_retention: 7
 
-connector_arctichub:
+arctichub:
   api_base_url: 'https://cert-be.arcticsecurity.com:9443/api'
-  api_events_path: 'storage/v1/events'
   api_customers_path: 'config/v1/customers'
-  api_events_key: 'ChangeMe'
   api_customers_key: 'ChangeMe'
   ip_cidr_expansion: false
   ip_cidr_expansion_max_host_size: 8192
   ip_cidr_expansion_private_networks: false
-  customers_ignored_names: 
+  customers_ignored_names:
     - '.*test sync.*'
     - '.*sync test.*'
+
+  # Events ingestion (disabled by default)
+  enable_events: false
+  api_events_path: 'storage/v1/events'
+  api_events_key: 'ChangeMe'
+  events_batch_size: 500

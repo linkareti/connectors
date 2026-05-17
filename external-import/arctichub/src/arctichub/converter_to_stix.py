@@ -1,581 +1,697 @@
-from datetime import datetime
-from typing import Dict, List, Optional
-
 import ipaddress
-
-import stix2
-
-from stix2.v21 import _DomainObject, _Observable, _RelationshipObject
+from datetime import datetime, timezone
+from typing import List
 
 import validators
 
-from pycti import (
-    Identity,
+from connectors_sdk.models import (
+    AutonomousSystem,
+    DomainName,
+    ExternalReference,
+    File,
+    IPV4Address,
+    IPV6Address,
     Indicator,
-    OpenCTIConnectorHelper,
-    StixCoreRelationship,
-    Location,
     Infrastructure,
+    Organization,
+    OrganizationAuthor,
+    Relationship,
+    Sector,
+    TLPMarking,
+    URL,
+)
+from connectors_sdk.models.enums import HashAlgorithm, RelationshipType, TLPLevel
+from pycti import OpenCTIConnectorHelper
+
+from arctichub.settings import ConnectorSettings
+
+_AnyOctiObject = (
+    OrganizationAuthor
+    | Organization
+    | Sector
+    | Infrastructure
+    | IPV4Address
+    | IPV6Address
+    | DomainName
+    | AutonomousSystem
+    | Relationship
+    | TLPMarking
+    | Indicator
+    | File
+    | URL
 )
 
-from .config_variables import ConfigConnector
+# Maps Arctic Hub event types to STIX indicator types
+_EVENT_TYPE_TO_INDICATOR_TYPE: dict[str, str] = {
+    "scanner": "anomalous-activity",
+    "brute-force": "malicious-activity",
+    "c&c": "malicious-activity",
+    "malware infection": "malicious-activity",
+    "malware url": "malicious-activity",
+    "phishing": "malicious-activity",
+    "defacement": "malicious-activity",
+    "artifact": "malicious-activity",
+    "attribution": "malicious-activity",
+    "dropzone": "malicious-activity",
+    "exploitation": "malicious-activity",
+    "spam infrastructure": "malicious-activity",
+    "vulnerable service": "anomalous-activity",
+    "weak encryption": "anomalous-activity",
+}
 
-from pycti.utils.constants import LocationTypes
+# Maps artifact hash type names from Arctic Hub to STIX HashAlgorithm
+_HASH_TYPE_MAP: dict[str, HashAlgorithm] = {
+    "sha1": HashAlgorithm.SHA1,
+    "sha256": HashAlgorithm.SHA256,
+    "sha512": HashAlgorithm.SHA512,
+    "md5": HashAlgorithm.MD5,
+    "sha-1": HashAlgorithm.SHA1,
+    "sha-256": HashAlgorithm.SHA256,
+}
+
 
 class ConverterToStix:
     """
-    Provides methods for converting various types of input data into STIX 2.1 objects.
+    Provides methods for converting Arctic Hub data into SDK entities (STIX 2.1 compliant).
 
-    REQUIREMENTS:
-    - generate_id() for each entity from OpenCTI pycti library except observables to create
+    Each method returns SDK model instances. Callers are responsible for calling
+    `.to_stix2_object()` before bundling.
     """
 
-    def __init__(self, helper: OpenCTIConnectorHelper, config: ConfigConnector):
+    def __init__(self, helper: OpenCTIConnectorHelper, config: ConnectorSettings):
         self.helper = helper
         self.config = config
-        self.author = self.create_author()
-    
-    def create_identity(
-            self, 
-            name: str, 
-            identity_class: str, 
-            description: str = None, 
-            created_by_ref: stix2.Identity = None,
-            contact_information: list = None,
-            ) -> stix2.Identity:
-        """
-        Create an identity.
-        :return: Identity in Stix2 object
-        """
-        identity = stix2.Identity(
-            id=Identity.generate_id(name=name, identity_class=identity_class),
-            name=name,
-            created_by_ref=created_by_ref,
-            identity_class=identity_class,
-            description=description,
-            contact_information=contact_information,
-        )
+        self.author = self._create_author()
 
-        return identity
-
-    def create_author(self) -> stix2.Identity:
-
-        """
-        Create Author
-        :return: Author in Stix2 object
-        """
-        author = self.create_identity(
+    @staticmethod
+    def _create_author() -> OrganizationAuthor:
+        """Create the connector's author organization."""
+        return OrganizationAuthor(
             name="Arctic Hub",
-            identity_class="organization",
-            description="Arctic Security helps national cybersecurity authorities deploy early warning systems for cybersecurity. Arctic Hub is a powerful cybersecurity automation platform that collects, harmonizes, and packages threat information, and ensures quick and effective notifications for your stakeholders.",
-        )
-        
-        return author
-
-    def create_organization(
-            self, 
-            name: str, 
-            description: str,
-            contact_information: list = None,
-            ) -> stix2.Identity:
-        """
-        Create an organization.
-        :return: Organization in Stix2 object
-        """
-        organization = self.create_identity(
-            name=name,
-            identity_class="organization",
-            description=description,
-            created_by_ref=self.author,
-            contact_information=contact_information,
-            )
-
-        return organization
-    
-    def create_sector(self, name: str, description: str = None) -> stix2.Identity:
-        """
-        Create a sector.
-        :return: Sector in Stix2 object
-        """
-        #TODO - should the sector be added to the organization?
-        sector = self.create_identity(
-            name=name,
-            identity_class="class",
-            description=description,
-            created_by_ref=self.author
-            )
-
-        return sector
-
-    
-    def create_infrastructure(self, name: str) -> stix2.Infrastructure:
-        """
-        Create an infraestructure.
-        :return: Infraestructure in Stix2 object
-        """
-        infraestructure = stix2.Infrastructure(
-            id=Infrastructure.generate_id(name),
-            name=name,
-            created_by_ref=self.author
-            )
-
-        return infraestructure
-    
-    def create_relationship(
-        self, source_id: str, relationship_type: str, target_id: str
-    ) -> dict:
-        """
-        Creates Relationship object
-        :param source_id: ID of source in string
-        :param relationship_type: Relationship type in string
-        :param target_id: ID of target in string
-        :return: Relationship STIX2 object
-        """
-        relationship = stix2.Relationship(
-            id=StixCoreRelationship.generate_id(
-                relationship_type, source_id, target_id
+            description=(
+                "Arctic Security helps national cybersecurity authorities deploy early warning "
+                "systems for cybersecurity. Arctic Hub is a powerful cybersecurity automation "
+                "platform that collects, harmonizes, and packages threat information, and ensures "
+                "quick and effective notifications for your stakeholders."
             ),
-            relationship_type=relationship_type,
-            source_ref=source_id,
-            target_ref=target_id,
-            created_by_ref=self.author,
         )
-        return relationship
 
-    @staticmethod
-    def _is_ipv6(value: str) -> bool:
-        """
-        Determine whether the provided IP string is IPv6
-        :param value: Value in string
-        :return: A boolean
-        """
-        is_valid_ipv6 = validators.ipv6(value)
-
-        if is_valid_ipv6:
-            return True
-        else:
-            return False
-
-    @staticmethod
-    def _is_ipv4(value: str) -> bool:
-        """
-        Determine whether the provided IP string is IPv4
-        :param value: Value in string
-        :return: A boolean
-        """
-        is_valid_ipv4 = validators.ipv4(value)
-
-        if is_valid_ipv4:
-            return True
-        else:
-            return False
-
-    @staticmethod
-    def _is_domain(value: str) -> bool:
-        """
-        Valid domain name regex including internationalized domain name
-        :param value: Value in string
-        :return: A boolean
-        """
-        is_valid_domain = validators.domain(value)
-
-        if is_valid_domain:
-            return True
-        else:
-            return False
-
-    def create_obs(self, value: str) -> dict:
-        """
-        Create observable according to value given
-        :param value: Value in string
-        :return: Stix object for IPV4, IPV6 or Domain
-        """
-        if self._is_ipv6(value) is True:
-            stix_ipv6_address = stix2.IPv6Address(
-                value=value,
-                custom_properties={
-                    "x_opencti_created_by_ref": self.author["id"],
-                },
-            )
-            return stix_ipv6_address
-        elif self._is_ipv4(value) is True:
-            stix_ipv4_address = stix2.IPv4Address(
-                value=value,
-                custom_properties={
-                    "x_opencti_created_by_ref": self.author["id"],
-                },
-            )
-            return stix_ipv4_address
-        elif self._is_domain(value) is True:
-            stix_domain_name = stix2.DomainName(
-                value=value,
-                custom_properties={
-                    "x_opencti_created_by_ref": self.author["id"],
-                },
-            )
-            return stix_domain_name
-        else:
-            self.helper.connector_logger.error(
-                "[CONNECTOR] This observable value is not a valid IPv4 or IPv6 address nor DomainName: ",
-                {"value": value},
-            )
-
-
-    def create_indicator(
+    def _create_organization(
         self,
-        indicator_type: str,
-        value: str,
-        pattern_type: str = 'stix',
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        created: Optional[datetime] = None,
-        modified: Optional[datetime] = None,
-        valid_from: Optional[datetime] = None,
-        labels: Optional[List[str]] = None,
-        confidence: Optional[int] = None,
-    ) -> stix2.Indicator:
-        """
-        Creates Indicator object
-        """  
-        pattern = self._generate_stix2_pattern(indicator_type, value)
-        
-        indicator =  stix2.Indicator(
-            id=Indicator.generate_id(pattern),
-            created_by_ref=self.author,
-            created = created,
-            modified = modified,
+        name: str,
+        description: str | None = None,
+        contact_information: str | None = None,
+    ) -> Organization:
+        """Create an organization entity for a customer."""
+        return Organization(
             name=name,
             description=description,
-            pattern=pattern,
-            pattern_type=pattern_type,
-            valid_from=valid_from,
-            labels=labels,
-            confidence=confidence,
-        )
-        return indicator
-    
-    def create_location(
-        self,
-        country: str,
-        latitude: float,
-        longitude: float,
-        
-        ) -> list[dict]:
-        
-        stix_location = stix2.Location(
-            id=Location.generate_id(country, "Country"),
-            name=country,
-            country=country,
-            created_by_ref=self.author,
-            latitude=latitude,
-            longitude=longitude,
-            custom_properties={
-                "x_opencti_location_type": "Country",
-                "x_opencti_created_by_ref": self.author.id
-            },
+            contact_information=contact_information,
+            author=self.author,
         )
 
-        return stix_location
-
-    def create_autonomous_system(self, name: str, number: int) -> dict:
-        """
-        Create autonomous system according to value given
-        :param autonomous_system: autonomous system value
-        :return: AutonomousSystem STIX2 object
-        """
-
-        stix_autonomous_system = stix2.AutonomousSystem(
-            number=number,
+    def _create_sector(self, name: str) -> Sector:
+        """Create a sector entity."""
+        return Sector(
             name=name,
-            custom_properties={
-                "x_opencti_created_by_ref": self.author.id
-            }
+            author=self.author,
         )
-        
-        return stix_autonomous_system
 
-    def process_customer(self, customer_data: dict) -> List[ _DomainObject | _RelationshipObject | _Observable ]:
+    def _create_infrastructure(self, name: str) -> Infrastructure:
+        """Create an infrastructure entity."""
+        return Infrastructure(
+            name=name,
+            author=self.author,
+        )
+
+    def _create_relationship(
+        self,
+        source: _AnyOctiObject,
+        relationship_type: RelationshipType,
+        target: _AnyOctiObject,
+    ) -> Relationship:
+        """Create a relationship between two SDK entities."""
+        return Relationship(
+            type=relationship_type,
+            source=source,
+            target=target,
+            author=self.author,
+        )
+
+    def _create_observable(self, value: str) -> IPV4Address | IPV6Address | DomainName | None:
         """
-        Process customer data to extract stix2 objects
-        
-        - Each customer should be an organization with organization type constituent.
-            - We ignore organizations that have no label “organization type” set, these are normally for testing
-            - Labels should be translated to sectors with the right links (ci sector and subsector)
-        - Make an infrastructure (observations>Infrastructures) per organization type:
-            - For now, these are “standard”,”ovi”,” eradication”, but with NISII, these will probably change a bit
-            - This is needed for the monitoring dashboards we want to make
-        - Each domain and IP (resolve the subnets as OpenCTI does not have that capability) should be an observable:
-            - Link the observable to the organization
-            - Add the observable to the right Infrastructure
-        - Email addresses:
-            - These should be added to the Contact information of the organization, these are not observables
-        - ASN:
-            - Only organizations like EDPNET have this value set
-            - This is if the organization has the whole ASN create “stix2.AutonomousSystem and relationship with identity”
+        Create the appropriate observable based on the value type.
 
-    
-        :param data: Customer data dictionary
-        :param ips_to_expand: Optional list of specific IPs or IP ranges to expand
-        :return: List of STIX2 objects
+        Args:
+            value: An IPv4 address, IPv6 address, or domain name string.
+
+        Returns:
+            The appropriate SDK observable, or None if the value is not recognized.
         """
+        try:
+            ipaddress.IPv6Address(value)
+            return IPV6Address(value=value, author=self.author)
+        except ipaddress.AddressValueError:
+            pass
 
-        stix_objects = []
-        
-        data = customer_data['data']
-        customer_name = data.get('name')
-        labels = data['labels']
+        try:
+            ipaddress.ip_network(value, strict=False)
+            return IPV4Address(value=value, author=self.author)
+        except (ipaddress.AddressValueError, ValueError):
+            pass
 
-        self.helper.connector_logger.info("[CONNECTOR] Processing customer ", {"customer": customer_name})
+        if validators.domain(value):
+            return DomainName(value=value, author=self.author)
 
-        organization_type = labels.get('organization type', None)
+        self.helper.connector_logger.error(
+            "[CONNECTOR] Value is not a valid IPv4, IPv6, or domain name",
+            {"value": value},
+        )
+        return None
+
+    def _create_autonomous_system(self, number: int) -> AutonomousSystem:
+        """Create an autonomous system observable."""
+        return AutonomousSystem(
+            number=number,
+            name=f"ASN {number}",
+            author=self.author,
+        )
+
+    def process_customer(self, customer_data: dict) -> List[_AnyOctiObject]:
+        """
+        Process customer data and return a list of SDK entities.
+
+        Each customer maps to:
+        - An Organization (the customer itself)
+        - An Infrastructure (based on organization type label)
+        - Sectors (ci sector and subsector) with part-of relationships
+        - Domain name observables with belongs-to relationships
+        - IP address observables with belongs-to and consists-of relationships
+        - Autonomous system observables with related-to relationships
+
+        Args:
+            customer_data: Customer data dictionary from the Arctic Hub API.
+
+        Returns:
+            List of SDK entity objects (call `.to_stix2_object()` before bundling).
+        """
+        octi_objects: List[_AnyOctiObject] = []
+
+        data = customer_data["data"]
+        customer_name = data.get("name")
+        labels = data["labels"]
+
+        self.helper.connector_logger.info(
+            "[CONNECTOR] Processing customer", {"customer": customer_name}
+        )
+
+        organization_type = labels.get("organization type")
         if not organization_type:
-            self.helper.connector_logger.info("[CONNECTOR] Ignoring customer without organization type", {"customer": customer_name})
-            return stix_objects
+            return octi_objects
 
-        #create the organization for the customer
-        customer = self.create_organization(
+        # Flatten the address book to a contact information string if present
+        address_book = data.get("address book")
+        contact_information = None
+        if address_book:
+            if isinstance(address_book, list):
+                contact_information = "; ".join(str(e) for e in address_book)
+            else:
+                contact_information = str(address_book)
+
+        customer = self._create_organization(
             name=customer_name,
-            description=labels.get('notes', None),
-            contact_information=data.get('address book', None),
+            description=labels.get("notes"),
+            contact_information=contact_information,
         )
+        octi_objects.append(customer)
 
-        stix_objects.append(customer)
+        infrastructure = self._create_infrastructure(name=organization_type)
+        octi_objects.append(infrastructure)
 
-        #create the infrastructure based on organization_type
-        infrastructure = self.create_infrastructure(
-            name=organization_type
-        )
+        octi_objects.extend(self._handle_sectors(labels, customer))
+        octi_objects.extend(self._handle_domains(data, customer))
+        octi_objects.extend(self._handle_ips(data, customer, infrastructure))
+        octi_objects.extend(self._handle_autonomous_systems(data, customer))
 
-        stix_objects.append(infrastructure)
+        return octi_objects
 
-        # hadle sectors
-        sectors = self.handle_sectors(labels, customer)
-        stix_objects.extend(sectors)
-
-        # hadle domains
-        domains = self.handle_domains(data, customer)
-        stix_objects.extend(domains)
-
-        # hadle ips
-        ips = self.handle_ips(data, customer, infrastructure)
-        stix_objects.extend(ips)
-
-        # hadle autonomous systems
-        autonomous_systems = self.handle_autonomous_systems(data, customer)
-        stix_objects.extend(autonomous_systems)
-
-        return stix_objects
-
-    def handle_sectors(self, labels: dict, customer: stix2.Identity):
-        
-        stix_sectors = []
+    def _handle_sectors(self, labels: dict, customer: Organization) -> List[_AnyOctiObject]:
+        """Build sector entities and part-of relationships from customer labels."""
+        result: List[_AnyOctiObject] = []
         cisector = None
         subsector = None
-        
-        cisector_label = labels.get('ci sector', None)
-        subsector_label = labels.get('subsector', None)
-        
+
+        cisector_label = labels.get("ci sector")
+        subsector_label = labels.get("subsector")
+
         if cisector_label:
-            cisector=self.create_sector(name=cisector_label)
-            stix_sectors.append(cisector)
-
-            customer_cisector_relationship = self.create_relationship(
-                source_id=customer.id,
-                relationship_type="part-of",
-                target_id=cisector.id,
+            cisector = self._create_sector(name=cisector_label)
+            result.append(cisector)
+            result.append(
+                self._create_relationship(
+                    source=customer,
+                    relationship_type=RelationshipType.PART_OF,
+                    target=cisector,
+                )
             )
-
-            stix_sectors.append(customer_cisector_relationship)
-
 
         if subsector_label:
-            subsector=self.create_sector(name=subsector_label)
-            stix_sectors.append(subsector)
-
-            customer_subsector_relationship = self.create_relationship(
-                source_id=customer.id,
-                relationship_type="part-of",
-                target_id=subsector.id,
+            subsector = self._create_sector(name=subsector_label)
+            result.append(subsector)
+            result.append(
+                self._create_relationship(
+                    source=customer,
+                    relationship_type=RelationshipType.PART_OF,
+                    target=subsector,
+                )
             )
-
-            stix_sectors.append(customer_subsector_relationship)
 
         if cisector and subsector:
-            sector_subsector_relationship = self.create_relationship(
-                source_id=subsector.id,
-                relationship_type="part-of",
-                target_id=cisector.id,
+            result.append(
+                self._create_relationship(
+                    source=subsector,
+                    relationship_type=RelationshipType.PART_OF,
+                    target=cisector,
+                )
             )
 
-            stix_sectors.append(sector_subsector_relationship)
+        return result
 
-        return stix_sectors
+    def _handle_domains(self, data: dict, customer: Organization) -> List[_AnyOctiObject]:
+        """Build domain name observables and belongs-to relationships."""
+        result: List[_AnyOctiObject] = []
 
-    def handle_domains(self, data: dict, customer: stix2.Identity):
-
-        stix_domains = []
-    
-        for domain_name_root in data.get('domain name', []):
-            for domain_name in domain_name_root.get('domain name', []):
-                domain_name_observable = self.create_obs(value=domain_name)
-                if domain_name_observable:
-                    stix_domains.append(domain_name_observable)
-
-                    domain_relationship = self.create_relationship(
-                        source_id=domain_name_observable.id,
-                        relationship_type="belongs-to",
-                        target_id=customer.id,
-                    )
-
-                    stix_domains.append(domain_relationship)
-                else:
+        for domain_group in data.get("domain name", []):
+            for domain_value in domain_group.get("domain name", []):
+                observable = self._create_observable(value=domain_value)
+                if observable is None:
                     self.helper.connector_logger.warning(
-                        "[CONNECTOR] Customer with unsupported domain name value",
-                        {"customer": customer.id, "domain_name": domain_name}
+                        "[CONNECTOR] Skipping unsupported domain name value",
+                        {"customer": customer.name, "domain_name": domain_value},
                     )
+                    continue
 
-        return stix_domains
-
-    def handle_ips(self, data: dict, customer: stix2.Identity, infrastructure: stix2.Infrastructure):
-
-        stix_ips = []
-
-        for ip_range_root in data.get('ip range', []):
-
-            resolved_ip_range = self.resolve_ip_ranges(ip_range_root.get('ip range', []))
-
-            ip_ranges = resolved_ip_range
-
-            for ip in ip_ranges:
-                ip_address = self.create_obs(value=ip)
-                if ip_address:
-                    stix_ips.append(ip_address)
-
-                    ip_relationship = self.create_relationship(
-                        source_id=ip_address.id,
-                        relationship_type="belongs-to",
-                        target_id=customer.id,
+                result.append(observable)
+                result.append(
+                    self._create_relationship(
+                        source=observable,
+                        relationship_type=RelationshipType.BELONGS_TO,
+                        target=customer,
                     )
+                )
 
-                    stix_ips.append(ip_relationship)
+        return result
 
-                    ip_infrastructure_relationship = self.create_relationship(
-                        source_id=infrastructure.id,
-                        relationship_type="consists-of",
-                        target_id=ip_address.id,
-                    )
+    def _handle_ips(
+        self,
+        data: dict,
+        customer: Organization,
+        infrastructure: Infrastructure,
+    ) -> List[_AnyOctiObject]:
+        """Build IP address observables and their relationships."""
+        result: List[_AnyOctiObject] = []
 
-                    stix_ips.append(ip_infrastructure_relationship)
+        for ip_range_group in data.get("ip range", []):
+            resolved_ips = self._resolve_ip_ranges(ip_range_group.get("ip range", []))
 
-                else:
+            for ip_value in resolved_ips:
+                observable = self._create_observable(value=ip_value)
+                if observable is None:
                     self.helper.connector_logger.warning(
-                        "[CONNECTOR] Customer with unsupported ip value",
-                        {"customer": customer.id, "ip": ip}
+                        "[CONNECTOR] Skipping unsupported IP value",
+                        {"customer": customer.name, "ip": ip_value},
                     )
+                    continue
 
-        return stix_ips
+                result.append(observable)
+                result.append(
+                    self._create_relationship(
+                        source=observable,
+                        relationship_type=RelationshipType.BELONGS_TO,
+                        target=customer,
+                    )
+                )
+                result.append(
+                    self._create_relationship(
+                        source=infrastructure,
+                        relationship_type=RelationshipType.CONSISTS_OF,
+                        target=observable,
+                    )
+                )
 
-    def handle_autonomous_systems(self, data: dict, customer: stix2.Identity):
-        
-        stix_as = []
-        
-        # If there are ASNs present, create the AutonomousSystem objects
-        for asn in data.get('asn', []):
-            autonomous_system = self.create_autonomous_system(
-                number=asn,
-                name=f"ASN {asn}"
+        return result
+
+    def _handle_autonomous_systems(
+        self, data: dict, customer: Organization
+    ) -> List[_AnyOctiObject]:
+        """Build autonomous system observables and related-to relationships."""
+        result: List[_AnyOctiObject] = []
+
+        for asn_number in data.get("asn", []):
+            autonomous_system = self._create_autonomous_system(number=asn_number)
+            result.append(autonomous_system)
+            result.append(
+                self._create_relationship(
+                    source=customer,
+                    relationship_type=RelationshipType.RELATED_TO,
+                    target=autonomous_system,
+                )
             )
-            
-            stix_as.append(autonomous_system)
 
-            asn_relationship = self.create_relationship(
-                source_id=customer.id,
-                relationship_type="related-to",
-                target_id=autonomous_system.id,
-            )
+        return result
 
-            stix_as.append(asn_relationship)
-
-        return stix_as
-
-    def resolve_cidr(self, cidr):
-        """
-        Resolve a CIDR range into individual IPs, with optional private network filtering
-        """
-        self.helper.connector_logger.info("[CONNECTOR] Resolving cidr ip range", {"cidr": cidr})
-
-        is_ipv6 = validators.ipv6(cidr)
-
-        if is_ipv6:
-            self.helper.connector_logger.info("[CONNECTOR] We don't have the time or space to expand IPv6 ranges, using cidr format.", {"cidr": cidr})
-            return [cidr]
-
-        if not self.config.ip_cidr_expansion:
-            self.helper.connector_logger.info("[CONNECTOR] IP_CIDR_EXPANSION is set to false. using cidr format only.", {"cidr": cidr})
-            return [cidr]
-
-        network = ipaddress.ip_network(cidr, strict=False)
-
-        # Check if private networks should be filtered
-        if self.config.ip_cidr_expansion_private_networks:
-            # Filter out private hosts
-            filtered_hosts = [str(ip) for ip in network.hosts() if not ip.is_private]
-        else:
-            # Include all hosts
-            filtered_hosts = [str(ip) for ip in network.hosts()]
-
-        total_hosts = len(filtered_hosts)
-    
-        if total_hosts > self.config.ip_cidr_expansion_max_host_size:
-            self.helper.connector_logger.info("[CONNECTOR] CIDR expansion exceeds max configuration value.", {"cidr": cidr, "total_hosts": total_hosts})
-            return [cidr]
-
-        return [cidr] + filtered_hosts
-
-    def expand_ip_range(self, ip_range):
-        """
-        # Resolve ip range interval to individual IPs
-        """
-        self.helper.connector_logger.info("[CONNECTOR] Expanding ip range interval", {"ip_range": ip_range})
-        
-        start_ip, end_ip = ip_range.split('-')
-        
-        start_ip_obj = ipaddress.ip_address(start_ip.strip())
-        end_ip_obj = ipaddress.ip_address(end_ip.strip())
-        
-        ip_list = []
-        # Generate all IPs in the range
-        current_ip = start_ip_obj
-        while current_ip <= end_ip_obj:
-            ip_list.append(str(current_ip))
-            current_ip += 1
-
-        return ip_list
-
-    def resolve_ip_ranges(self, ip_ranges) -> List[str]:
+    def _resolve_ip_ranges(self, ip_ranges: list) -> List[str]:
+        """Resolve a list of IP range entries into individual IP strings."""
         all_ips = []
-        
+
         for ip_range in ip_ranges:
-            if "/" in ip_range:  # CIDR notation
-                all_ips.extend(self.resolve_cidr(ip_range))
-            elif "-" in ip_range:  # IP range notation
-                all_ips.extend(self.expand_ip_range(ip_range))
-            else: # assuming single ip
+            if "/" in ip_range:
+                all_ips.extend(self._resolve_cidr(ip_range))
+            elif "-" in ip_range:
+                all_ips.extend(self._expand_ip_range(ip_range))
+            else:
                 all_ips.append(ip_range)
 
         return all_ips
 
+    def _resolve_cidr(self, cidr: str) -> List[str]:
+        """
+        Resolve a CIDR range, returning individual IPs if expansion is enabled and
+        the range is within the configured size limit. Returns just the CIDR otherwise.
+        IPv6 CIDRs are never expanded.
+        """
+        self.helper.connector_logger.info(
+            "[CONNECTOR] Resolving CIDR IP range", {"cidr": cidr}
+        )
 
-def get_first_last_ip(ip_input):
-    if '/' in ip_input:  # CIDR notation
-        network = ipaddress.ip_network(ip_input, strict=False)
-        return [str(network.network_address), str(network.broadcast_address)]
-    elif '-' in ip_input:  # IP range notation
-        start_ip, end_ip = ip_input.split('-')
-        
-        start_ip_obj = ipaddress.ip_address(start_ip.strip())
-        end_ip_obj = ipaddress.ip_address(end_ip.strip())
-        
-        return [str(start_ip_obj), str(end_ip_obj)]
-    else:
-        return [ip_input]
+        try:
+            ipaddress.IPv6Network(cidr, strict=False)
+            self.helper.connector_logger.info(
+                "[CONNECTOR] IPv6 ranges are not expanded, using CIDR format",
+                {"cidr": cidr},
+            )
+            return [cidr]
+        except (ipaddress.AddressValueError, ValueError):
+            pass
+
+        if not self.config.arctichub.ip_cidr_expansion:
+            self.helper.connector_logger.info(
+                "[CONNECTOR] CIDR expansion is disabled, using CIDR format",
+                {"cidr": cidr},
+            )
+            return [cidr]
+
+        network = ipaddress.ip_network(cidr, strict=False)
+
+        if self.config.arctichub.ip_cidr_expansion_private_networks:
+            hosts = [str(ip) for ip in network.hosts() if not ip.is_private]
+        else:
+            hosts = [str(ip) for ip in network.hosts()]
+
+        if len(hosts) > self.config.arctichub.ip_cidr_expansion_max_host_size:
+            self.helper.connector_logger.info(
+                "[CONNECTOR] CIDR expansion exceeds max host size limit, using CIDR format",
+                {"cidr": cidr, "total_hosts": len(hosts)},
+            )
+            return [cidr]
+
+        return [cidr] + hosts
+
+    def _expand_ip_range(self, ip_range: str) -> List[str]:
+        """Expand an IP range interval (e.g. '10.0.0.1-10.0.0.5') into individual IPs."""
+        self.helper.connector_logger.info(
+            "[CONNECTOR] Expanding IP range interval", {"ip_range": ip_range}
+        )
+
+        start_str, end_str = ip_range.split("-")
+        start_ip = ipaddress.ip_address(start_str.strip())
+        end_ip = ipaddress.ip_address(end_str.strip())
+
+        ip_list = []
+        current = start_ip
+        while current <= end_ip:
+            ip_list.append(str(current))
+            current += 1
+
+        return ip_list
+
+    # -------------------------------------------------------------------------
+    # Events processing
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_event_datetime(value: str | None) -> datetime | None:
+        """Parse an Arctic Hub datetime string (e.g. '2024-08-21 10:53:26Z') to an aware datetime."""
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value, "%Y-%m-%d %H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _map_tlp_level(tlp_str: str | None) -> TLPLevel:
+        """Map Arctic Hub TLP annotation string to a TLPLevel enum value."""
+        mapping = {
+            "red": TLPLevel.RED,
+            "amber+strict": TLPLevel.AMBER_STRICT,
+            "amber": TLPLevel.AMBER,
+            "green": TLPLevel.GREEN,
+            "white": TLPLevel.WHITE,
+            "clear": TLPLevel.CLEAR,
+        }
+        return mapping.get((tlp_str or "").lower(), TLPLevel.RED)
+
+    def _build_ip_indicator(
+        self,
+        ip: str,
+        ip_version: str,
+        tlp_marking: TLPMarking,
+        ext_ref: ExternalReference,
+        event: dict,
+    ) -> Indicator:
+        """Build an Indicator for the primary IP observable."""
+        if ip_version == "6":
+            pattern = f"[ipv6-addr:value = '{ip}']"
+            obs_type = "IPv6-Addr"
+        else:
+            pattern = f"[ipv4-addr:value = '{ip}']"
+            obs_type = "IPv4-Addr"
+
+        return self._build_indicator(
+            pattern=pattern,
+            obs_type=obs_type,
+            name=f"{event.get('type', 'unknown')}: {ip}",
+            event=event,
+            tlp_marking=tlp_marking,
+            ext_ref=ext_ref,
+        )
+
+    def _build_domain_indicator(
+        self,
+        domain: str,
+        tlp_marking: TLPMarking,
+        ext_ref: ExternalReference,
+        event: dict,
+    ) -> Indicator:
+        """Build an Indicator for a domain name observable."""
+        return self._build_indicator(
+            pattern=f"[domain-name:value = '{domain}']",
+            obs_type="Domain-Name",
+            name=f"{event.get('type', 'unknown')}: {domain}",
+            event=event,
+            tlp_marking=tlp_marking,
+            ext_ref=ext_ref,
+        )
+
+    def _build_url_indicator(
+        self,
+        url: str,
+        tlp_marking: TLPMarking,
+        ext_ref: ExternalReference,
+        event: dict,
+    ) -> Indicator:
+        """Build an Indicator for a URL observable."""
+        return self._build_indicator(
+            pattern=f"[url:value = '{url}']",
+            obs_type="Url",
+            name=f"{event.get('type', 'unknown')}: {url}",
+            event=event,
+            tlp_marking=tlp_marking,
+            ext_ref=ext_ref,
+        )
+
+    def _build_hash_indicator(
+        self,
+        artifact_hash: str,
+        artifact_hash_type: str,
+        tlp_marking: TLPMarking,
+        ext_ref: ExternalReference,
+        event: dict,
+    ) -> Indicator | None:
+        """Build an Indicator for a file hash (artifact) observable."""
+        hash_algo = _HASH_TYPE_MAP.get(artifact_hash_type.lower())
+        if hash_algo is None:
+            self.helper.connector_logger.warning(
+                "[CONNECTOR] Unsupported artifact hash type, skipping",
+                {"hash_type": artifact_hash_type},
+            )
+            return None
+
+        # STIX hash algorithm names use uppercase with hyphens (e.g. SHA-1, MD5)
+        stix_hash_name = hash_algo.value
+        return self._build_indicator(
+            pattern=f"[file:hashes.'{stix_hash_name}' = '{artifact_hash}']",
+            obs_type="StixFile",
+            name=f"artifact: {artifact_hash_type.upper()} {artifact_hash[:16]}...",
+            event=event,
+            tlp_marking=tlp_marking,
+            ext_ref=ext_ref,
+        )
+
+    def _build_indicator(
+        self,
+        pattern: str,
+        obs_type: str,
+        name: str,
+        event: dict,
+        tlp_marking: TLPMarking,
+        ext_ref: ExternalReference,
+    ) -> Indicator:
+        """Build a generic Indicator from the provided pattern and event metadata."""
+        event_type = event.get("type", "unknown")
+        indicator_type = _EVENT_TYPE_TO_INDICATOR_TYPE.get(event_type, "unknown")
+
+        description = event.get("description", "")
+        additional_info = event.get("additional information")
+        if additional_info:
+            description = f"{description}\n\n{additional_info}"
+
+        valid_from = (
+            self._parse_event_datetime(event.get("first seen"))
+            or self._parse_event_datetime(event.get("observation time"))
+        )
+
+        score = None
+        mandiant_score = event.get("mandiant score")
+        if mandiant_score is not None:
+            try:
+                score = int(mandiant_score)
+            except (ValueError, TypeError):
+                pass
+
+        labels = [event_type]
+        category = event.get("category")
+        if category:
+            labels.append(category)
+
+        return Indicator(
+            name=name,
+            pattern=pattern,
+            pattern_type="stix",
+            main_observable_type=obs_type,
+            description=description or None,
+            indicator_types=[indicator_type],
+            labels=labels,
+            valid_from=valid_from,
+            score=score,
+            create_observables=True,
+            author=self.author,
+            markings=[tlp_marking],
+            external_references=[ext_ref],
+        )
+
+    def process_event(self, event_data: dict) -> List[_AnyOctiObject]:
+        """
+        Process a single Arctic Hub event and return a list of SDK entities.
+
+        Each event produces:
+        - A TLPMarking from the event's TLP annotation
+        - An Indicator for the primary IP address (always present)
+        - An Indicator for the domain name, if present (phishing, defacement, attribution, etc.)
+        - An Indicator for the URL, if present (malware url, defacement)
+        - An Indicator for the artifact hash, if present (artifact type)
+
+        All indicators have ``create_observables=True`` so OpenCTI will auto-create
+        the corresponding observables.
+
+        Args:
+            event_data: A single event record from the Arctic Hub API.
+
+        Returns:
+            List of SDK entity objects (call ``.to_stix2_object()`` before bundling).
+        """
+        result: List[_AnyOctiObject] = []
+
+        event = event_data.get("event", {})
+        annotations = event_data.get("annotations", {})
+
+        ip = event.get("ip")
+        if not ip:
+            self.helper.connector_logger.warning(
+                "[CONNECTOR] Skipping event without IP", {"uuid": event.get("uuid")}
+            )
+            return result
+
+        # TLP marking — shared across all indicators from this event
+        tlp_level = self._map_tlp_level(annotations.get("tlp"))
+        tlp_marking = TLPMarking(level=tlp_level)
+        result.append(tlp_marking)
+
+        # External reference back to the data source
+        feeder = event.get("feeder", "Arctic Hub")
+        feed_url = event.get("description url") or event.get("feed url")
+        ext_ref = ExternalReference(
+            source_name=feeder,
+            url=feed_url,
+            external_id=event.get("uuid"),
+        )
+
+        # IP indicator (always)
+        ip_version = event.get("ip version", "4")
+        ip_indicator = self._build_ip_indicator(
+            ip=ip,
+            ip_version=ip_version,
+            tlp_marking=tlp_marking,
+            ext_ref=ext_ref,
+            event=event,
+        )
+        result.append(ip_indicator)
+
+        # Domain indicator (when present)
+        domain = event.get("domain name")
+        if domain:
+            domain_indicator = self._build_domain_indicator(
+                domain=domain,
+                tlp_marking=tlp_marking,
+                ext_ref=ext_ref,
+                event=event,
+            )
+            result.append(domain_indicator)
+
+        # URL indicator (when present)
+        url = event.get("url")
+        if url:
+            url_indicator = self._build_url_indicator(
+                url=url,
+                tlp_marking=tlp_marking,
+                ext_ref=ext_ref,
+                event=event,
+            )
+            result.append(url_indicator)
+
+        # Hash indicator (artifact type)
+        artifact_hash = event.get("artifact hash")
+        artifact_hash_type = event.get("artifact hash type", "")
+        if artifact_hash and artifact_hash_type:
+            hash_indicator = self._build_hash_indicator(
+                artifact_hash=artifact_hash,
+                artifact_hash_type=artifact_hash_type,
+                tlp_marking=tlp_marking,
+                ext_ref=ext_ref,
+                event=event,
+            )
+            if hash_indicator:
+                result.append(hash_indicator)
+
+        return result

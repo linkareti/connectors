@@ -1,65 +1,61 @@
+import re
 import sys
 from datetime import datetime, timezone
+from typing import List
 
-import re
-
+from arctichub.client_api import ConnectorClient
+from arctichub.converter_to_stix import ConverterToStix
+from arctichub.settings import ConnectorSettings
 from pycti import OpenCTIConnectorHelper
-
-from .client_api import ConnectorClient
-from .config_variables import ConfigConnector
-from .converter_to_stix import ConverterToStix
 
 
 class ConnectorArctichub:
     """
-    Specifications of the external import connector
+    Specifications of the external import connector.
 
     This class encapsulates the main actions, expected to be run by any external import connector.
-    Note that the attributes defined below will be complemented per each connector type.
-    This type of connector aim to fetch external data to create STIX bundle and send it in a RabbitMQ queue.
-    The STIX bundle in the queue will be processed by the workers.
-    This type of connector uses the basic methods of the helper.
+    This type of connector fetches external data to create STIX bundles and sends them to OpenCTI.
+    Customers are processed individually, each producing its own bundle, to limit memory usage.
 
     ---
 
-    Attributes
-        - `config (ConfigConnector())`:
-            Initialize the connector with necessary configuration environment variables
-
-        - `helper (OpenCTIConnectorHelper(config))`:
-            This is the helper to use.
-            ALL connectors have to instantiate the connector helper with configurations.
-            Doing this will do a lot of operations behind the scene.
-
-        - `converter_to_stix (ConnectorConverter(helper))`:
-            Provide methods for converting various types of input data into STIX 2.1 objects.
+    Attributes:
+        config (ConnectorSettings):
+            Store the connector's configuration.
+        helper (OpenCTIConnectorHelper):
+            Handle the connection and requests between the connector and OpenCTI.
+        client (ConnectorClient):
+            Provide methods to request the Arctic Hub API.
+        converter_to_stix (ConverterToStix):
+            Provide methods for converting Arctic Hub data into SDK entities.
 
     ---
 
-    Best practices
+    Best practices:
         - `self.helper.api.work.initiate_work(...)` is used to initiate a new work
-        - `self.helper.schedule_iso()` is used to encapsulate the main process in a scheduler
+        - `self.helper.schedule_iso()` is used to schedule connector's runs frequency
         - `self.helper.connector_logger.[info/debug/warning/error]` is used when logging a message
         - `self.helper.stix2_create_bundle(stix_objects)` is used when creating a bundle
-        - `self.helper.send_stix2_bundle(stix_objects_bundle)` is used to send the bundle to RabbitMQ
-        - `self.helper.set_state()` is used to set state
-
+        - `self.helper.send_stix2_bundle(stix_objects_bundle)` is used to send the bundle to OpenCTI
+        - `self.helper.set_state()` is used to store persistent data in connector's state
     """
 
-    def __init__(self):
+    def __init__(self, config: ConnectorSettings, helper: OpenCTIConnectorHelper):
         """
-        Initialize the Connector with necessary configurations
-        """
+        Initialize `ConnectorArctichub` with its configuration.
 
-        # Load configuration file and connection helper
-        self.config = ConfigConnector()
-        self.helper = OpenCTIConnectorHelper(self.config.load)
-        self.client = ConnectorClient(self.helper, self.config)
+        Args:
+            config (ConnectorSettings): Configuration of the connector.
+            helper (OpenCTIConnectorHelper): Helper to manage connection and requests to OpenCTI.
+        """
+        self.config = config
+        self.helper = helper
+        self.client = ConnectorClient(self.helper, self.config.arctichub)
         self.converter_to_stix = ConverterToStix(self.helper, self.config)
 
     def process_message(self) -> None:
         """
-        Connector main process to collect intelligence with paged processing
+        Connector main process to collect intelligence with per-customer bundle processing.
         """
         self.helper.connector_logger.info(
             "[CONNECTOR] Starting connector...",
@@ -67,28 +63,20 @@ class ConnectorArctichub:
         )
 
         try:
-            # Get the current state
-            now = datetime.now()
-            current_timestamp = int(datetime.timestamp(now))
+            now = datetime.now(timezone.utc)
+            current_timestamp = int(now.timestamp())
             current_state = self.helper.get_state()
 
-            # Logging last run details
             is_first_run = current_state is None or "last_run" not in current_state
             if is_first_run:
-                self.helper.connector_logger.info(
-                    "[CONNECTOR] Connector has never run..."
-                )
+                self.helper.connector_logger.info("[CONNECTOR] Connector has never run...")
             else:
-                last_run = current_state["last_run"]
                 self.helper.connector_logger.info(
                     "[CONNECTOR] Connector last run",
-                    {"last_run_datetime": last_run},
+                    {"last_run_datetime": current_state["last_run"]},
                 )
 
-            # Friendly name will be displayed on OpenCTI platform
-            friendly_name = "Connector arctichub feed"
-
-            # Initiate a new work
+            friendly_name = "Connector Arctic Hub feed"
             work_id = self.helper.api.work.initiate_work(
                 self.helper.connect_id, friendly_name
             )
@@ -98,79 +86,65 @@ class ConnectorArctichub:
                 {"connector_name": self.helper.connect_name},
             )
 
-            # Fetch all customers
             all_customers = self.client.get_customers()
+            # Sort by number of IP ranges descending to process larger customers first
+            all_customers = sorted(
+                all_customers,
+                key=lambda x: len(x["data"].get("ip range", [])),
+                reverse=True,
+            )
 
-            # Sort the list by the number of IP ranges in descending order just to ensure the "bigger customers" are processed first
-            all_customers = sorted(all_customers, key=lambda x: len(x["data"].get("ip range", [])), reverse=True
-)
-
-            # Process customers in "pages"
             total_processed = 0
             total_customers = len(all_customers)
             total_ignored = 0
-            
+
             self.helper.connector_logger.info(
                 "[CONNECTOR] Total customers to be processed",
-                {
-                    "total_customers": total_customers
-                }
+                {"total_customers": total_customers},
             )
 
-            create_organization = is_first_run
-            
-            for customer_data in all_customers:
+            # Include the author organization only on the first run
+            include_author = is_first_run
 
+            for customer_data in all_customers:
                 if not self.is_customer_valid(customer_data):
                     total_ignored += 1
                     continue
-                
-                # Collect and transform this page
-                stix_objects = []
 
-                if create_organization:
-                    organization = self.converter_to_stix.create_author()
-                    stix_objects.append(organization)
+                octi_objects = []
+
+                if include_author:
+                    octi_objects.append(self.converter_to_stix.author)
                     self.helper.connector_logger.info(
-                       "[CONNECTOR] Creating organization in the first run...",
-                        {"otganization": organization},
+                        "[CONNECTOR] Including author organization in the first run..."
                     )
-                    create_organization = False
+                    include_author = False
 
-                stix_objects.extend(self.converter_to_stix.process_customer(customer_data))
-                
-                # Send this page to the platform
-                if stix_objects:
-                    stix_objects_bundle = self.helper.stix2_create_bundle(stix_objects)
+                octi_objects.extend(self.converter_to_stix.process_customer(customer_data))
 
-                    # Empty the variables to free up memory
-                    stix_objects.clear()
-                    stix_objects = None
-                    bundles_sent = self.helper.send_stix2_bundle(
-                        stix_objects_bundle,
-                        update=self.config.update_existing_data,
-                        work_id=work_id
-                    )
-
+                if octi_objects:
+                    self._send_bundle(octi_objects, work_id)
                     total_processed += 1
                     self.helper.connector_logger.info(
-                        "Sending STIX objects to OpenCTI...",
+                        "[CONNECTOR] Customer bundle sent",
                         {
                             "total_processed": total_processed,
                             "total_customers": total_customers,
                             "total_ignored": total_ignored,
-                            "bundles_sent": str(len(bundles_sent))
                         },
                     )
 
-                stix_objects_bundle = None
-                bundles_sent = None
+            # Process events if enabled
+            events_processed = 0
+            if self.config.arctichub.enable_events:
+                events_processed = self._process_events(work_id, current_state or {})
 
-            # Store the current timestamp as a last run of the connector
             current_state = self.helper.get_state() or {}
-            current_state_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
-            last_run_datetime = datetime.fromtimestamp(current_timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            
+            current_state_datetime = now.strftime("%Y-%m-%d %H:%M:%SZ")
+            last_run_datetime = datetime.fromtimestamp(
+                current_timestamp, tz=timezone.utc
+            ).strftime("%Y-%m-%d %H:%M:%SZ")
+
             current_state["last_run"] = current_state_datetime
             self.helper.set_state(current_state)
 
@@ -178,6 +152,7 @@ class ConnectorArctichub:
                 f"{self.helper.connect_name} connector successfully run, "
                 f"processed {total_processed} customers out of {total_customers}, "
                 f"ignored {total_ignored} customers, "
+                f"processed {events_processed} events, "
                 f"storing last_run as {last_run_datetime}"
             )
 
@@ -192,63 +167,174 @@ class ConnectorArctichub:
             sys.exit(0)
         except Exception as err:
             self.helper.connector_logger.error(str(err))
-    
+
+    def _send_bundle(self, octi_objects: list, work_id: str) -> None:
+        """Convert SDK objects to STIX and send a bundle to OpenCTI."""
+        if not octi_objects:
+            return
+        stix_objects = [obj.to_stix2_object() for obj in octi_objects]
+        stix_bundle = self.helper.stix2_create_bundle(stix_objects)
+        bundles_sent = self.helper.send_stix2_bundle(
+            stix_bundle,
+            update=self.config.connector.update_existing_data,
+            work_id=work_id,
+            cleanup_inconsistent_bundle=True,
+        )
+        self.helper.connector_logger.info(
+            "[CONNECTOR] Bundle sent to OpenCTI",
+            {"bundles_sent": str(len(bundles_sent)), "stix_objects": len(stix_objects)},
+        )
+
+    def _process_events(self, work_id: str, current_state: dict) -> int:
+        """
+        Fetch and process events from Arctic Hub, sending STIX bundles in batches.
+
+        Events are filtered client-side to only process those observed after the last
+        events run. State is updated with the latest observation time after processing.
+
+        Args:
+            work_id: The current OpenCTI work ID.
+            current_state: The current connector state dict (used to read/write last_events_run).
+
+        Returns:
+            Number of events processed.
+        """
+        self.helper.connector_logger.info("[CONNECTOR] Starting events processing...")
+
+        last_events_run_str = current_state.get("last_events_run")
+        last_events_run: datetime | None = None
+        if last_events_run_str:
+            try:
+                last_events_run = datetime.fromisoformat(last_events_run_str)
+            except ValueError:
+                pass
+
+        if last_events_run:
+            self.helper.connector_logger.info(
+                "[CONNECTOR] Processing events since last run",
+                {"last_events_run": last_events_run.isoformat()},
+            )
+        else:
+            self.helper.connector_logger.info(
+                "[CONNECTOR] First events run — processing all available events"
+            )
+
+        all_events = self.client.get_events()
+        if not all_events:
+            self.helper.connector_logger.info("[CONNECTOR] No events returned from API")
+            return 0
+
+        self.helper.connector_logger.info(
+            "[CONNECTOR] Total events fetched from API", {"total": len(all_events)}
+        )
+
+        batch: List = []
+        total_processed = 0
+        total_skipped = 0
+        latest_observation_time: datetime | None = None
+        batch_size = self.config.arctichub.events_batch_size
+
+        for event_data in all_events:
+            event = event_data.get("event", {})
+
+            # Filter: skip events already processed in a previous run
+            obs_time_str = event.get("observation time")
+            obs_time = self.converter_to_stix._parse_event_datetime(obs_time_str)
+            if last_events_run and obs_time and obs_time <= last_events_run:
+                total_skipped += 1
+                continue
+
+            octi_objects = self.converter_to_stix.process_event(event_data)
+            if not octi_objects:
+                total_skipped += 1
+                continue
+
+            batch.extend(octi_objects)
+            total_processed += 1
+
+            # Track the latest observation time seen
+            if obs_time and (latest_observation_time is None or obs_time > latest_observation_time):
+                latest_observation_time = obs_time
+
+            # Send when batch is full
+            if len(batch) >= batch_size:
+                self._send_bundle(batch, work_id)
+                self.helper.connector_logger.info(
+                    "[CONNECTOR] Events batch sent",
+                    {"events_processed_so_far": total_processed},
+                )
+                batch = []
+
+        # Send remaining events
+        if batch:
+            self._send_bundle(batch, work_id)
+
+        self.helper.connector_logger.info(
+            "[CONNECTOR] Events processing complete",
+            {
+                "total_processed": total_processed,
+                "total_skipped": total_skipped,
+            },
+        )
+
+        # Persist the latest observation time so the next run can filter from here
+        if latest_observation_time:
+            current_state["last_events_run"] = latest_observation_time.isoformat()
+            self.helper.set_state(current_state)
+
+        return total_processed
+
     def is_customer_valid(self, customer_data: dict) -> bool:
         """
-        Validate if a customer should be processed based on various criteria
-        
-        :param customer_data: Complete customer data dictionary
-        :return: Boolean indicating if customer should be processed
+        Validate if a customer should be processed.
+
+        Args:
+            customer_data: Complete customer data dictionary from the API.
+
+        Returns:
+            True if the customer should be processed, False otherwise.
         """
-        # Check if customer data is valid
-        if 'data' not in customer_data or 'labels' not in customer_data['data']:
+        if "data" not in customer_data or "labels" not in customer_data["data"]:
             self.helper.connector_logger.info(
-                "[CONNECTOR] Ignoring customer with invalid data structure", 
-                {"customer_data": customer_data}
+                "[CONNECTOR] Ignoring customer with invalid data structure",
+                {"customer_data": customer_data},
             )
             return False
 
-        data = customer_data['data']
-        customer_name = data.get('name', 'Unknown')
-        labels = data['labels']
+        data = customer_data["data"]
+        customer_name = data.get("name", "Unknown")
+        labels = data["labels"]
 
-        # Check if customer name matches any regex pattern in ignored names list
-        if self.config.customers_ignored_names:
-            for ignored_pattern in self.config.customers_ignored_names:
-                if re.match(ignored_pattern, customer_name, re.IGNORECASE):
-                    self.helper.connector_logger.info(
-                        "[CONNECTOR] Ignoring customer by name pattern", 
-                        {
-                            "customer": customer_name, 
-                            "ignored_pattern": ignored_pattern
-                        }
-                    )
-                    return False
+        for ignored_pattern in self.config.arctichub.customers_ignored_names:
+            if re.match(ignored_pattern, customer_name, re.IGNORECASE):
+                self.helper.connector_logger.info(
+                    "[CONNECTOR] Ignoring customer by name pattern",
+                    {"customer": customer_name, "ignored_pattern": ignored_pattern},
+                )
+                return False
 
-        # Check for organization type
-        organization_type = labels.get('organization type', None)
-        if not organization_type:
+        if not labels.get("organization type"):
             self.helper.connector_logger.info(
-                "[CONNECTOR] Ignoring customer without organization type", 
-                {"customer": customer_name}
+                "[CONNECTOR] Ignoring customer without organization type",
+                {"customer": customer_name},
             )
             return False
 
         return True
-    
+
     def run(self) -> None:
         """
-        Run the main process encapsulated in a scheduler
-        It allows you to schedule the process to run at a certain intervals
-        This specific scheduler from the pycti connector helper will also check the queue size of a connector
-        If `CONNECTOR_QUEUE_THRESHOLD` is set, if the connector's queue size exceeds the queue threshold,
-        the connector's main process will not run until the queue is ingested and reduced sufficiently,
-        allowing it to restart during the next scheduler check. (default is 500MB)
-        It requires the `duration_period` connector variable in ISO-8601 standard format
-        Example: `CONNECTOR_DURATION_PERIOD=PT5M` => Will run the process every 5 minutes
-        :return: None
+        Start the connector, schedule its runs and trigger the first run.
+
+        It allows you to schedule the process to run at a certain interval.
+        This specific scheduler from the `OpenCTIConnectorHelper` will also check the queue size.
+        If `CONNECTOR_QUEUE_THRESHOLD` is set and the queue exceeds the threshold,
+        the connector will not run until the queue is sufficiently reduced.
+
+        Example:
+            - If `CONNECTOR_DURATION_PERIOD=P1D`, then the connector runs every day.
         """
         self.helper.schedule_iso(
             message_callback=self.process_message,
-            duration_period=self.config.duration_period,
+            duration_period=self.config.connector.duration_period,
         )
