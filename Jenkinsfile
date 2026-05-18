@@ -1,4 +1,4 @@
-@Library('release-shared-library@tags/rel-1.7.14') _
+@Library('release-shared-library@tags/rel-1.8.2') _
 
 release{
     notificationStream = 'SysAdmin'
