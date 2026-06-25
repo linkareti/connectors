@@ -12248,16 +12248,106 @@
         "Vulnerability Management"
       ],
       "verified": true,
-      "last_verified_date": null,
+      "last_verified_date": "2026-06-04",
       "playbook_supported": true,
       "max_confidence_level": 50,
       "support_version": ">=6.3.4",
       "subscription_link": null,
       "source_code": "https://github.com/OpenCTI-Platform/connectors/tree/master/internal-enrichment/greynoise-vuln",
-      "manager_supported": false,
+      "manager_supported": true,
       "container_version": "rolling",
       "container_image": "opencti/connector-greynoise-vuln",
-      "container_type": "INTERNAL_ENRICHMENT"
+      "container_type": "INTERNAL_ENRICHMENT",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://www.filigran.io/connectors/greynoise-vuln_config.schema.json",
+        "type": "object",
+        "properties": {
+          "OPENCTI_URL": {
+            "description": "The base URL of the OpenCTI instance.",
+            "format": "uri",
+            "maxLength": 2083,
+            "minLength": 1,
+            "type": "string"
+          },
+          "OPENCTI_TOKEN": {
+            "description": "The API token to connect to OpenCTI.",
+            "type": "string"
+          },
+          "CONNECTOR_NAME": {
+            "default": "GreyNoise Vulnerability Enrichment",
+            "description": "The name of the connector.",
+            "type": "string"
+          },
+          "CONNECTOR_SCOPE": {
+            "default": [
+              "vulnerability"
+            ],
+            "description": "The scope of the connector.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "CONNECTOR_LOG_LEVEL": {
+            "default": "error",
+            "description": "The minimum level of logs to display.",
+            "enum": [
+              "debug",
+              "info",
+              "warn",
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          },
+          "CONNECTOR_TYPE": {
+            "const": "INTERNAL_ENRICHMENT",
+            "default": "INTERNAL_ENRICHMENT",
+            "type": "string"
+          },
+          "CONNECTOR_AUTO": {
+            "default": false,
+            "description": "Whether the connector should run automatically when an entity is created or updated.",
+            "type": "boolean"
+          },
+          "GREYNOISE_VULN_KEY": {
+            "description": "The GreyNoise API key.",
+            "format": "password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "GREYNOISE_VULN_MAX_TLP": {
+            "default": "TLP:AMBER",
+            "description": "The maximal TLP of the vulnerability being enriched.",
+            "enum": [
+              "TLP:CLEAR",
+              "TLP:WHITE",
+              "TLP:GREEN",
+              "TLP:AMBER",
+              "TLP:AMBER+STRICT",
+              "TLP:RED"
+            ],
+            "type": "string"
+          },
+          "GREYNOISE_VULN_NAME": {
+            "default": "GreyNoise Internet Scanner",
+            "description": "The name of the GreyNoise entity (used as the author identity in STIX).",
+            "type": "string"
+          },
+          "GREYNOISE_VULN_DESCRIPTION": {
+            "default": "GreyNoise collects and analyzes opportunistic scan and attack activity for devices connected directly to the Internet.",
+            "description": "The description of the GreyNoise entity.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "OPENCTI_URL",
+          "OPENCTI_TOKEN",
+          "GREYNOISE_VULN_KEY"
+        ],
+        "additionalProperties": true
+      }
     },
     {
       "title": "Greynoise",
@@ -12852,10 +12942,309 @@
       "support_version": ">=5.6.1",
       "subscription_link": null,
       "source_code": "https://github.com/OpenCTI-Platform/connectors/tree/master/internal-enrichment/joe-sandbox",
-      "manager_supported": false,
+      "manager_supported": true,
       "container_version": "rolling",
       "container_image": "opencti/connector-joe-sandbox",
-      "container_type": "INTERNAL_ENRICHMENT"
+      "container_type": "INTERNAL_ENRICHMENT",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://www.filigran.io/connectors/joe-sandbox_config.schema.json",
+        "type": "object",
+        "properties": {
+          "OPENCTI_URL": {
+            "description": "The base URL of the OpenCTI instance.",
+            "format": "uri",
+            "maxLength": 2083,
+            "minLength": 1,
+            "type": "string"
+          },
+          "OPENCTI_TOKEN": {
+            "description": "The API token to connect to OpenCTI.",
+            "type": "string"
+          },
+          "CONNECTOR_NAME": {
+            "default": "Joe Sandbox",
+            "description": "The name of the connector.",
+            "type": "string"
+          },
+          "CONNECTOR_SCOPE": {
+            "default": [
+              "Artifact",
+              "Url"
+            ],
+            "description": "The scope of the connector, i.e., the types of entities the connector can enrich.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "CONNECTOR_LOG_LEVEL": {
+            "default": "error",
+            "description": "The minimum level of logs to display.",
+            "enum": [
+              "debug",
+              "info",
+              "warn",
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          },
+          "CONNECTOR_TYPE": {
+            "const": "INTERNAL_ENRICHMENT",
+            "default": "INTERNAL_ENRICHMENT",
+            "type": "string"
+          },
+          "CONNECTOR_AUTO": {
+            "default": false,
+            "description": "Whether the connector should run automatically when an entity is created or updated.",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_REPORT_TYPES": {
+            "default": "executive,html,iochtml,iocjson,iocxml,unpackpe,stix,ida,pdf,pdfexecutive,misp,pcap,maec,memdumps,json,lightjsonfixed,xml,lightxml,pcapunified,pcapsslinspection",
+            "description": "Download/upload as external ref files for these report types. json/xml are only allowed to be used with Joe Sandbox Cloud Pro",
+            "type": "string"
+          },
+          "JOE_SANDBOX_API_URL": {
+            "default": "https://jbxcloud.joesecurity.org/api",
+            "description": "Cloud Pro: https://jbxcloud.joesecurity.org/api, Cloud Basic: https://joesandbox.com/api",
+            "type": "string"
+          },
+          "JOE_SANDBOX_API_KEY": {
+            "description": "The API key for Joe Sandbox",
+            "format": "password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "JOE_SANDBOX_ANALYSIS_URL": {
+            "default": "https://jbxcloud.joesecurity.org/analysis",
+            "description": "Cloud Pro: https://jbxcloud.joesecurity.org/analysis, Cloud Basic: https://joesandbox.com/analysis",
+            "type": "string"
+          },
+          "JOE_SANDBOX_ACCEPT_TAC": {
+            "default": true,
+            "description": "If true you accept Terms and Conditions at https://jbxcloud.joesecurity.org/tandc",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_API_TIMEOUT": {
+            "default": 30,
+            "description": "Time in seconds to timeout after calling Joe Sandbox API",
+            "type": "integer"
+          },
+          "JOE_SANDBOX_VERIFY_SSL": {
+            "default": true,
+            "description": "Verify SSL for API calls",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_API_RETRIES": {
+            "default": 5,
+            "description": "How many times to retry API calls before giving up",
+            "type": "integer"
+          },
+          "JOE_SANDBOX_PROXIES": {
+            "default": null,
+            "description": "A JSON encoded map of proxies to use for API calls. See https://requests.readthedocs.io/en/latest/user/advanced/?highlight=proxy#proxies",
+            "type": "string"
+          },
+          "JOE_SANDBOX_USER_AGENT": {
+            "default": "OpenCTI",
+            "description": "The user agent. Use this when you write an integration with Joe Sandbox so that it is possible to track how often an integration is being used.",
+            "type": "string"
+          },
+          "JOE_SANDBOX_SYSTEMS": {
+            "default": "w10x64_office",
+            "description": "Analysis systems to use (comma separated if multiple)",
+            "type": "string"
+          },
+          "JOE_SANDBOX_ANALYSIS_TIME": {
+            "default": 300,
+            "description": "Timeout for the analysis",
+            "type": "integer"
+          },
+          "JOE_SANDBOX_INTERNET_ACCESS": {
+            "default": true,
+            "description": "Enable full internet access in the analysis (must be false if internet simulation is true)",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_INTERNET_SIMULATION": {
+            "default": false,
+            "description": "Enable internet simulation (must be false if internet access is true)",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_HYBRID_CODE_ANALYSIS": {
+            "default": true,
+            "description": "Enable Hybrid Code Analysis (HCA).",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_HYBRID_DECOMPILATION": {
+            "default": true,
+            "description": "Enable Hybrid Decompilation (DEC).",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_REPORT_CACHE": {
+            "default": false,
+            "description": "Enable the report cache. Check the cache for existing reports before running a full analysis.",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_APK_INSTRUMENTATION": {
+            "default": true,
+            "description": "Perform APK DEX code instrumentation.",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_AMSI_UNPACKING": {
+            "default": true,
+            "description": "Perform generic unpacking using the Microsoft Antimalware Scan Interface (AMSI).",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_SSL_INSPECTION": {
+            "default": true,
+            "description": "Enable HTTPS inspection.",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_VBA_INSTRUMENTATION": {
+            "default": false,
+            "description": "Enable VBA instrumentation (two analyses are performed)",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_JS_INSTRUMENTATION": {
+            "default": false,
+            "description": "Enable Javascript instrumentation (two analyses are performed)",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_JAVA_JAR_TRACING": {
+            "default": false,
+            "description": "Enable JAVA JAR tracing (two analyses are performed)",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_DOTNET_TRACING": {
+            "default": false,
+            "description": "Enable .NET tracing (two analyses are performed)",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_START_AS_NORMAL_USER": {
+            "default": false,
+            "description": "Starts the Sample with normal user privileges",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_SYSTEM_DATE": {
+            "default": null,
+            "description": "Change the analyzer's system date (helpful for date-aware samples), format is: YYYY-MM-DD",
+            "type": "string"
+          },
+          "JOE_SANDBOX_LANGUAGE_AND_LOCALE": {
+            "default": null,
+            "description": "Changes the language and locale of the analysis machine",
+            "type": "string"
+          },
+          "JOE_SANDBOX_LOCALIZED_INTERNET_COUNTRY": {
+            "default": null,
+            "description": "Select the country to use for routing internet access through.",
+            "type": "string"
+          },
+          "JOE_SANDBOX_EMAIL_NOTIFICATION": {
+            "default": null,
+            "description": "Enable email notification",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_ARCHIVE_NO_UNPACK": {
+            "default": false,
+            "description": "Do not unpack archives (zip, 7z etc) containing multiple files.",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_HYPERVISOR_BASED_INSPECTION": {
+            "default": false,
+            "description": "Enable Hypervisor based Inspection",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_FAST_MODE": {
+            "default": false,
+            "description": "Fast Mode focuses on fast analysis and detection versus deep forensic analysis.",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_SECONDARY_RESULTS": {
+            "default": true,
+            "description": "Enables secondary results such as Yara rule generation, classification via Joe Sandbox Class as well as several detail reports. Analysis will run faster with disabled secondary results",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_COOKBOOK_FILE_PATH": {
+            "default": null,
+            "description": "Path to a cookbook to run for the analysis",
+            "type": "string"
+          },
+          "JOE_SANDBOX_DOCUMENT_PASSWORD": {
+            "default": "**********",
+            "description": "Password for decrypting documents like MS Office and PDFs",
+            "format": "password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "JOE_SANDBOX_ARCHIVE_PASSWORD": {
+            "default": "**********",
+            "description": "This password will be used to decrypt archives (zip, 7z, rar etc.).",
+            "format": "password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "JOE_SANDBOX_COMMAND_LINE_ARGUMENT": {
+            "default": null,
+            "description": "Will start the sample with the given command-line argument. Currently only available on Windows analyzers.",
+            "type": "string"
+          },
+          "JOE_SANDBOX_ENCRYPT_WITH_PASSWORD": {
+            "default": null,
+            "description": "Encryption password for analyses, AES-256 is used to encrypt files and the password is deleted on the backend after encrypting files",
+            "format": "password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "JOE_SANDBOX_BROWSER": {
+            "default": false,
+            "description": "Use a browser for analysis of URLs, false == download/execute",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_URL_REPUTATION": {
+            "default": false,
+            "description": "Lookup the reputation of URLs and domains to improve the analysis. This option will send URLs and domains to third party services and WHOIS servers!",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_EXPORT_TO_JBXVIEW": {
+            "default": false,
+            "description": "Export the report(s) from this analysis to Joe Sandbox View.",
+            "type": "boolean"
+          },
+          "JOE_SANDBOX_DELETE_AFTER_DAYS": {
+            "default": 30,
+            "description": "Delete the analysis after X days. If not set, the default value is used",
+            "type": "integer"
+          },
+          "JOE_SANDBOX_PRIORITY": {
+            "default": null,
+            "description": "ON PREMISE EXCLUSIVE PARAMETER, set the priority of the submission between 1 and 10, high value means higher priority",
+            "type": "integer"
+          },
+          "JOE_SANDBOX_DEFAULT_TLP": {
+            "default": "TLP:CLEAR",
+            "description": "The default TLP for newly created stix objects",
+            "type": "string"
+          },
+          "JOE_SANDBOX_YARA_COLOR": {
+            "default": "#0059f7",
+            "description": "The color for yara labels applied to the observable",
+            "type": "string"
+          },
+          "JOE_SANDBOX_DEFAULT_COLOR": {
+            "default": "#54483b",
+            "description": "The color for default labels",
+            "type": "string"
+          }
+        },
+        "required": [
+          "OPENCTI_URL",
+          "OPENCTI_TOKEN",
+          "JOE_SANDBOX_API_KEY"
+        ],
+        "additionalProperties": true
+      }
     },
     {
       "title": "Kaspersky Enrichment",
@@ -15105,6 +15494,27 @@
         ],
         "additionalProperties": true
       }
+    },
+    {
+      "title": "VisionHeight",
+      "slug": "visionheight",
+      "description": "VisionHeight is a threat intelligence platform that aggregates risk signals across IP addresses and domains. This OpenCTI internal-enrichment connector queries the VisionHeight API to enrich IPv4 and Domain observables with risk scores, threat labels, infrastructure context (ASN, country, vulnerabilities), DNS resolutions, SSL certificates, and WHOIS data. Observables with risk score >= 75 are automatically promoted to Indicators with a based-on relationship. Every enriched object is stamped with a VisionHeight Identity (created_by_ref) and an external_reference linking back to the VisionHeight UI for analyst pivoting.",
+      "short_description": "Enriches IPv4 and Domain observables with VisionHeight threat intelligence: risk score, labels, ASN/geolocation, vulnerabilities, DNS, certificates, and WHOIS. Promotes high-risk observables to Indicators.",
+      "logo": "data:image/png;base64,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",
+      "use_cases": [
+        "Enrichment & Analysis"
+      ],
+      "verified": false,
+      "last_verified_date": null,
+      "playbook_supported": true,
+      "max_confidence_level": 75,
+      "support_version": ">=7.260224.0",
+      "subscription_link": null,
+      "source_code": "https://github.com/OpenCTI-Platform/connectors/tree/master/internal-enrichment/visionheight",
+      "manager_supported": false,
+      "container_version": "rolling",
+      "container_image": "opencti/connector-visionheight",
+      "container_type": "INTERNAL_ENRICHMENT"
     },
     {
       "title": "VMray Analyzer",
