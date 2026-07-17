@@ -28,3 +28,4 @@ external-import/loaderinsightagency
 
 .mise/config.local.toml
 .mise/tasks/local/**
+/external-import/alienvault/target/
