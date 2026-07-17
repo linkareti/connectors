@@ -1,0 +1,5 @@
+services:
+  opencti-connector-alienvault:
+    build:
+      context: .
+    image: ${repo}/${linkare.project.prefix}/opencti-connector-alienvault-${opencti.version}:${project.version}
