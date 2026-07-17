@@ -5,7 +5,7 @@
     <parent>
         <groupId>com.linkare.opencti.connectors</groupId>
         <artifactId>base</artifactId>
-        <version>1.3.0</version>
+        <version>1.3.1-SNAPSHOT</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
