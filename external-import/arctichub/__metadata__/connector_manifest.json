@@ -11,11 +11,11 @@
   "last_verified_date": null,
   "playbook_supported": false,
   "max_confidence_level": 50,
-  "support_version": null,
+  "support_version": ">=6.6.12",
   "subscription_link": null,
-  "source_code": "https://github.com/linkareti/connectors/tree/develop/external-import/arctichub",
+  "source_code": "https://github.com/OpenCTI-Platform/connectors/tree/master/external-import/arctichub",
   "manager_supported": true,
   "container_version": "rolling",
-  "container_image": null,
+  "container_image": "opencti/connector-arctichub",
   "container_type": "EXTERNAL_IMPORT"
 }
