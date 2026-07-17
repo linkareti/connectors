@@ -49,6 +49,7 @@
 
     <modules>
         <module>external-import/arctichub</module>
+        <module>external-import/alienvault</module>
     </modules>
 
     <profiles>
