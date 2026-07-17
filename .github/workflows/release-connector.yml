@@ -1,0 +1,469 @@
+name: "Release Connector"
+
+# Production release pipeline for individual connectors.
+#
+# Triggers:
+#   1. Automatic — push a tag matching {connector-name}/{version}
+#      e.g.  git tag mitre/7.260630.0 && git push origin mitre/7.260630.0
+#   2. Manual — workflow_dispatch with connector_name (version auto-computed)
+#
+# Pipeline:
+#   1. Parse tag (or inputs) → extract connector_name + version
+#   2. Resolve connector directory (scan type dirs)
+#   3. Generate scoped release notes (git-cliff)
+#   4. Build & push Docker image (DockerHub + GHCR)
+#   5. Create GitHub Release with changelog + manifest asset
+
+on:
+  push:
+    tags:
+      # Match per-connector tags: {name}/{version} (glob '*' does not match '/')
+      - '*/*'
+      # Exclude SDK tags explicitly
+      - '!connectors-sdk/*'
+  workflow_dispatch:
+    inputs:
+      connector_name:
+        description: >
+          Connector directory name (e.g. "mitre", "misp").
+          Must be unique across type directories — workflow errors if ambiguous.
+        required: true
+        type: string
+      version:
+        description: >
+          Optional CalVer override (e.g. "7.260603.0").
+          If omitted, auto-computed as 7.YYMMDD.PATCH from today's date.
+        required: false
+        type: string
+        default: ""
+      dry_run:
+        description: "Dry run — build images but skip push and release creation"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-connector-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────────────────
+  # 1. Resolve connector directory and build configuration
+  # ──────────────────────────────────────────────────────────
+  resolve:
+    name: Resolve connector
+    runs-on: ubuntu-latest
+    outputs:
+      connector_name: ${{ steps.parse.outputs.connector_name }}
+      connector_dir: ${{ steps.find.outputs.connector_dir }}
+      connector_type: ${{ steps.find.outputs.connector_type }}
+      connector_type_env: ${{ steps.find.outputs.connector_type_env }}
+      version: ${{ steps.version.outputs.version }}
+      fips: ${{ steps.variants.outputs.fips }}
+      image_name: ${{ steps.meta.outputs.image_name }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      is_tag_push: ${{ steps.parse.outputs.is_tag_push }}
+      dry_run: ${{ steps.parse.outputs.dry_run }}
+      tag: ${{ steps.version.outputs.tag }}
+      matrix_json: ${{ steps.matrix.outputs.matrix_json }}
+    steps:
+      - name: Parse trigger inputs
+        id: parse
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Tag push: extract connector_name and version from ref_name
+            TAG="${{ github.ref_name }}"
+            CONNECTOR_NAME="${TAG%/*}"
+            VERSION="${TAG##*/}"
+
+            if [ -z "$CONNECTOR_NAME" ] || [ -z "$VERSION" ]; then
+              echo "::error::Failed to parse tag '${TAG}'. Expected format: {connector-name}/{version}"
+              exit 1
+            fi
+
+            echo "connector_name=$CONNECTOR_NAME" >> "$GITHUB_OUTPUT"
+            echo "is_tag_push=true" >> "$GITHUB_OUTPUT"
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+            echo "🏷️ Tag push: $TAG → connector=$CONNECTOR_NAME version=$VERSION"
+          else
+            # workflow_dispatch: use inputs directly
+            echo "connector_name=${{ inputs.connector_name }}" >> "$GITHUB_OUTPUT"
+            echo "is_tag_push=false" >> "$GITHUB_OUTPUT"
+            echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
+            echo "📋 Manual dispatch: connector=${{ inputs.connector_name }}"
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-tags: true
+          sparse-checkout: |
+            external-import
+            internal-enrichment
+            internal-export-file
+            internal-import-file
+            stream
+          sparse-checkout-cone-mode: false
+
+      - name: Find connector directory
+        id: find
+        run: |
+          CONNECTOR_NAME="${{ steps.parse.outputs.connector_name }}"
+          TYPE_DIRS="external-import internal-enrichment internal-export-file internal-import-file stream"
+
+          MATCHES=()
+          for type_dir in $TYPE_DIRS; do
+            if [ -d "${type_dir}/${CONNECTOR_NAME}" ]; then
+              MATCHES+=("${type_dir}/${CONNECTOR_NAME}")
+            fi
+          done
+
+          if [ ${#MATCHES[@]} -eq 0 ]; then
+            echo "::error::Connector '${CONNECTOR_NAME}' not found in any type directory."
+            echo ""
+            echo "Searched in: $TYPE_DIRS"
+            exit 1
+          fi
+
+          if [ ${#MATCHES[@]} -gt 1 ]; then
+            echo "::error::Ambiguous connector name '${CONNECTOR_NAME}' — found in multiple directories:"
+            for match in "${MATCHES[@]}"; do
+              echo "  - $match"
+            done
+            echo ""
+            echo "This connector name is ambiguous. Please disambiguate by using the full path in a future version of this workflow."
+            exit 1
+          fi
+
+          CONNECTOR_DIR="${MATCHES[0]}"
+          TYPE_DIR=$(echo "$CONNECTOR_DIR" | cut -d/ -f1)
+          # e.g. external-import -> EXTERNAL_IMPORT
+          CONNECTOR_TYPE_ENV=$(echo "$TYPE_DIR" | tr '[:lower:]-' '[:upper:]_')
+
+          {
+            echo "connector_dir=$CONNECTOR_DIR"
+            echo "connector_type=$TYPE_DIR"
+            echo "connector_type_env=$CONNECTOR_TYPE_ENV"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "✅ Resolved: $CONNECTOR_DIR (type: $CONNECTOR_TYPE_ENV)"
+
+      - name: Compute version
+        id: version
+        run: |
+          CONNECTOR_NAME="${{ steps.parse.outputs.connector_name }}"
+          IS_TAG_PUSH="${{ steps.parse.outputs.is_tag_push }}"
+          MAJOR=7
+
+          if [ "$IS_TAG_PUSH" = "true" ]; then
+            # Version comes directly from the tag
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION##*/}"
+
+            if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+              echo "::error::Invalid version '${VERSION}' from tag '${{ github.ref_name }}'. Expected numeric version (e.g. 7.260630.0)"
+              exit 1
+            fi
+
+            TAG="${{ github.ref_name }}"
+          else
+            # workflow_dispatch: use input or auto-compute
+            INPUT_VERSION="${{ inputs.version }}"
+
+            if [ -n "$INPUT_VERSION" ]; then
+              if ! echo "$INPUT_VERSION" | grep -qE '^[0-9]+\.[0-9]{6}\.[0-9]+$'; then
+                echo "::error::Invalid CalVer version: '$INPUT_VERSION'. Expected format: MAJOR.YYMMDD.PATCH (e.g. 7.260603.0)"
+                exit 1
+              fi
+              VERSION="$INPUT_VERSION"
+            else
+              TODAY=$(date -u +"%y%m%d")
+
+              # Find existing tags for this connector with today's date and increment patch
+              PATCH=0
+              while git tag --list "${CONNECTOR_NAME}/${MAJOR}.${TODAY}.${PATCH}" | grep -q .; do
+                PATCH=$((PATCH + 1))
+              done
+
+              VERSION="${MAJOR}.${TODAY}.${PATCH}"
+              echo "🗓️ Auto-computed version from date: $VERSION"
+            fi
+
+            TAG="${CONNECTOR_NAME}/${VERSION}"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "📌 Version: $VERSION (tag: $TAG)"
+
+      - name: Detect build variants
+        id: variants
+        run: |
+          CONNECTOR_DIR="${{ steps.find.outputs.connector_dir }}"
+
+          # FIPS: detected by the presence of Dockerfile_fips
+          FIPS="false"
+          if [ -f "${CONNECTOR_DIR}/Dockerfile_fips" ]; then
+            FIPS="true"
+          fi
+
+          echo "fips=$FIPS" >> "$GITHUB_OUTPUT"
+          echo "📦 FIPS: $FIPS"
+
+      - name: Compute image metadata
+        id: meta
+        run: |
+          CONNECTOR_NAME="${{ steps.parse.outputs.connector_name }}"
+          VERSION="${{ steps.version.outputs.version }}"
+
+          IMAGE_NAME="connector-${CONNECTOR_NAME}"
+          IMAGE_TAG="${VERSION}"
+
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+          echo "🐳 Image: opencti/${IMAGE_NAME}:${IMAGE_TAG}"
+
+      - name: Generate build matrix
+        id: matrix
+        run: |
+          CONNECTOR_DIR="${{ steps.find.outputs.connector_dir }}"
+          CONNECTOR_NAME="${{ steps.parse.outputs.connector_name }}"
+          CONNECTOR_TYPE="${{ steps.find.outputs.connector_type }}"
+          FIPS="${{ steps.variants.outputs.fips }}"
+
+          MATRIX_JSON=$(cat <<EOF
+          {"include": [{"path": "${CONNECTOR_DIR}", "name": "${CONNECTOR_NAME}", "connector_type": "${CONNECTOR_TYPE}", "fips": "${FIPS}"}]}
+          EOF
+          )
+
+          echo "matrix_json=$MATRIX_JSON" >> "$GITHUB_OUTPUT"
+          echo "📋 Matrix: $MATRIX_JSON"
+
+  # ──────────────────────────────────────────────────────────
+  # 2. Generate release notes from conventional commits
+  # ──────────────────────────────────────────────────────────
+  release-notes:
+    name: Generate release notes
+    runs-on: ubuntu-latest
+    needs: resolve
+    outputs:
+      changelog: ${{ steps.cliff.outputs.content || steps.rerelease-final.outputs.changelog || steps.initial.outputs.changelog }}
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Check for previous tag and changes
+        id: prev
+        run: |
+          CONNECTOR_NAME="${{ needs.resolve.outputs.connector_name }}"
+          CONNECTOR_DIR="${{ needs.resolve.outputs.connector_dir }}"
+          CURRENT_TAG="${{ needs.resolve.outputs.tag }}"
+
+          # Find previous tag for this connector (excluding the current one)
+          PREV_TAG=$(git tag --list "${CONNECTOR_NAME}/*" --sort=-version:refname | grep -v "^${CURRENT_TAG}$" | head -1)
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "status=initial" >> "$GITHUB_OUTPUT"
+            echo "📌 No previous tag — initial release"
+          else
+            echo "tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
+            COMMIT_COUNT=$(git log "${PREV_TAG}..HEAD" --oneline --no-merges -- "${CONNECTOR_DIR}/" | wc -l | tr -d ' ')
+            if [ "$COMMIT_COUNT" -gt 0 ]; then
+              echo "status=changed" >> "$GITHUB_OUTPUT"
+              echo "📌 Previous tag: $PREV_TAG ($COMMIT_COUNT new commits)"
+            else
+              echo "status=unchanged" >> "$GITHUB_OUTPUT"
+              echo "📌 Previous tag: $PREV_TAG (no new commits — re-release)"
+            fi
+          fi
+
+      - name: Generate changelog with git-cliff
+        id: cliff
+        if: steps.prev.outputs.status == 'changed'
+        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
+        with:
+          config: cliff.toml
+          args: >-
+            --tag-pattern "${{ needs.resolve.outputs.connector_name }}/*"
+            --include-path "${{ needs.resolve.outputs.connector_dir }}/**"
+            --tag "${{ needs.resolve.outputs.tag }}"
+            --unreleased
+            --strip header
+        env:
+          OUTPUT: /tmp/changelog.md
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get previous changelog for re-release
+        id: rerelease
+        if: steps.prev.outputs.status == 'unchanged'
+        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
+        with:
+          config: cliff.toml
+          args: >-
+            --tag-pattern "${{ needs.resolve.outputs.connector_name }}/*"
+            --include-path "${{ needs.resolve.outputs.connector_dir }}/**"
+            --latest
+            --strip header
+        env:
+          OUTPUT: /tmp/prev-changelog.md
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepend re-release notice
+        id: rerelease-final
+        if: steps.prev.outputs.status == 'unchanged'
+        run: |
+          PREV_CHANGELOG=$(cat /tmp/prev-changelog.md 2>/dev/null || true)
+          {
+            echo "changelog<<EOF"
+            echo "> ♻️ **Re-release** — no changes since \`${{ steps.prev.outputs.tag }}\`."
+            echo ""
+            echo "$PREV_CHANGELOG"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Initial release notes (no prior tag)
+        id: initial
+        if: steps.prev.outputs.status == 'initial'
+        run: |
+          {
+            echo "changelog<<EOF"
+            echo "This is the first independent release for **${{ needs.resolve.outputs.connector_name }}** (\`${{ needs.resolve.outputs.connector_dir }}\`)."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  # ──────────────────────────────────────────────────────────
+  # 3. Build and push Docker image (reuses standardized workflow)
+  # ──────────────────────────────────────────────────────────
+  build:
+    needs: resolve
+    uses: ./.github/workflows/build-connector-type.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      type_name: ${{ needs.resolve.outputs.connector_type }}
+      matrix_json: ${{ needs.resolve.outputs.matrix_json }}
+      image_tags: ${{ needs.resolve.outputs.image_tag }}
+      build_mode: release
+      push: ${{ needs.resolve.outputs.dry_run != 'true' }}
+    secrets: inherit
+
+  # ──────────────────────────────────────────────────────────
+  # 4. Create GitHub Release
+  # ──────────────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [resolve, release-notes, build]
+    if: needs.resolve.outputs.dry_run != 'true'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Overwrite guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.resolve.outputs.tag }}"
+          if gh release view "$TAG" --json tagName >/dev/null 2>&1; then
+            echo "::error::A GitHub Release already exists for tag '${TAG}'. Aborting to prevent overwrite."
+            exit 1
+          fi
+
+      - name: Create tag (manual dispatch only)
+        if: needs.resolve.outputs.is_tag_push != 'true'
+        run: |
+          TAG="${{ needs.resolve.outputs.tag }}"
+          echo "🏷️  Creating tag: $TAG"
+
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Tag '$TAG' already exists. Use a different version or push the existing tag to trigger a release."
+            exit 1
+          fi
+
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANGELOG: ${{ needs.release-notes.outputs.changelog }}
+        run: |
+          CONNECTOR_NAME="${{ needs.resolve.outputs.connector_name }}"
+          CONNECTOR_DIR="${{ needs.resolve.outputs.connector_dir }}"
+          VERSION="${{ needs.resolve.outputs.version }}"
+          TAG="${{ needs.resolve.outputs.tag }}"
+          TITLE="${CONNECTOR_NAME} ${VERSION}"
+
+          echo "📋 Creating release: $TITLE"
+
+          gh release create "$TAG" \
+            --title "$TITLE" \
+            --notes "$CHANGELOG" \
+            --target "${{ github.sha }}"
+
+          # Attach connector manifest as release asset
+          MANIFEST="${CONNECTOR_DIR}/__metadata__/connector_manifest.json"
+          if [ -f "$MANIFEST" ]; then
+            gh release upload "$TAG" "$MANIFEST" --clobber
+          fi
+
+          echo "✅ Release created: $TITLE"
+
+  # ──────────────────────────────────────────────────────────
+  # 5. Summary
+  # ──────────────────────────────────────────────────────────
+  summary:
+    name: Release summary
+    runs-on: ubuntu-latest
+    needs: [resolve, release-notes, build, release]
+    if: always()
+    steps:
+      - name: Print summary
+        run: |
+          DRY_RUN="${{ needs.resolve.outputs.dry_run }}"
+          CONNECTOR="${{ needs.resolve.outputs.connector_name }}"
+          VERSION="${{ needs.resolve.outputs.version }}"
+          DIR="${{ needs.resolve.outputs.connector_dir }}"
+          IMAGE="${{ needs.resolve.outputs.image_name }}:${{ needs.resolve.outputs.image_tag }}"
+          FIPS="${{ needs.resolve.outputs.fips }}"
+          TAG="${{ needs.resolve.outputs.tag }}"
+          IS_TAG_PUSH="${{ needs.resolve.outputs.is_tag_push }}"
+
+          {
+            echo "## 🚀 Release Connector — Summary"
+            echo ""
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "> ⚠️ **DRY RUN** — no images were pushed and no release was created."
+              echo ""
+            fi
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Connector | \`${CONNECTOR}\` |"
+            echo "| Version | \`${VERSION}\` |"
+            echo "| Tag | \`${TAG}\` |"
+            echo "| Directory | \`${DIR}\` |"
+            echo "| Image | \`opencti/${IMAGE}\` |"
+            echo "| FIPS | ${FIPS} |"
+            echo "| Trigger | $([ \"$IS_TAG_PUSH\" = \"true\" ] && echo \"tag push\" || echo \"manual dispatch\") |"
+            echo "| Dry Run | ${DRY_RUN} |"
+            echo ""
+
+            echo "### Job Results"
+            echo ""
+            echo "| Job | Status |"
+            echo "|-----|--------|"
+            echo "| Resolve | ${{ needs.resolve.result }} |"
+            echo "| Release Notes | ${{ needs.release-notes.result }} |"
+            echo "| Build | ${{ needs.build.result }} |"
+            echo "| Release | ${{ needs.release.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

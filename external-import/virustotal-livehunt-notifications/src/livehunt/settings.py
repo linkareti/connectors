@@ -1,4 +1,3 @@
-import warnings
 from datetime import timedelta
 from typing import Literal
 
@@ -6,9 +5,10 @@ from connectors_sdk import (
     BaseConfigModel,
     BaseConnectorSettings,
     BaseExternalImportConnectorConfig,
+    DeprecatedField,
     ListFromString,
 )
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr
 
 
 class ExternalImportConnectorConfig(BaseExternalImportConnectorConfig):
@@ -27,7 +27,15 @@ class ExternalImportConnectorConfig(BaseExternalImportConnectorConfig):
     )
     scope: ListFromString = Field(
         description="The scope of the connector.",
-        default=["StixFile", "Indicator", "Incident"],
+        default=[
+            "StixFile",
+            "Indicator",
+            "Incident",
+            "Domain-Name",
+            "Url",
+            "IPv4-Addr",
+            "IPv6-Addr",
+        ],
     )
     duration_period: timedelta = Field(
         description="The period of time to await between two runs of the connector.",
@@ -122,6 +130,59 @@ class VirusTotalLiveHuntNotificationsConfig(BaseConfigModel):
         description="Add livehunt name and matched yara rules label to the alert",
         default=True,
     )
+    get_malware_config: bool = Field(
+        description=(
+            "Extract C2 infrastructure (domains, IPs, URLs) from VirusTotal's "
+            "malware configuration analysis and add the resulting observables "
+            "to the bundle. Only effective when ``create_file`` is true."
+        ),
+        default=False,
+    )
+    create_file_indicators: bool = Field(
+        description=(
+            "Create a File indicator (SHA-256 pattern) for each matched "
+            "file. Only effective when ``create_file`` is true — the "
+            "File indicator is emitted alongside the File observable in "
+            "``LivehuntBuilder.create_file``, so leaving ``create_file`` "
+            "off means this flag has no effect."
+        ),
+        default=False,
+    )
+    create_domain_name_indicators: bool = Field(
+        description=(
+            "Create Domain-Name indicators for domains extracted from the "
+            "malware configuration."
+        ),
+        default=False,
+    )
+    create_ip_indicators: bool = Field(
+        description=(
+            "Create IPv4/IPv6 indicators for IP addresses extracted from the "
+            "malware configuration."
+        ),
+        default=False,
+    )
+    create_url_indicators: bool = Field(
+        description=(
+            "Create URL indicators for URLs extracted from the malware "
+            "configuration."
+        ),
+        default=False,
+    )
+    limit: int | None = Field(
+        description=(
+            "Maximum number of notifications to process per run. Useful when "
+            "the VirusTotal API quota is small. Leave unset to process every "
+            "available notification."
+        ),
+        default=None,
+        ge=1,
+    )
+    interval_sec: int | None = DeprecatedField(
+        new_namespace="connector",
+        new_namespaced_var="duration_period",
+        new_value_factory=lambda v: timedelta(seconds=int(v)),
+    )
 
 
 class ConnectorSettings(BaseConnectorSettings):
@@ -135,29 +196,3 @@ class ConnectorSettings(BaseConnectorSettings):
     virustotal_livehunt_notifications: VirusTotalLiveHuntNotificationsConfig = Field(
         default_factory=VirusTotalLiveHuntNotificationsConfig
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_deprecated_interval(cls, data: dict) -> dict:
-        """
-        Env var `VIRUSTOTAL_LIVEHUNT_NOTIFICATIONS_INTERVAL_SEC` is deprecated.
-        This is a workaround to keep the old config working while we migrate to `CONNECTOR_DURATION_PERIOD`.
-        """
-        connector_data: dict = data.get("connector", {})
-        virustotal_livehunt_notifications_data: dict = data.get(
-            "virustotal_livehunt_notifications", {}
-        )
-        if interval := virustotal_livehunt_notifications_data.pop("interval_sec", None):
-            if connector_data.get("duration_period") is not None:
-                warnings.warn(
-                    "Both 'VIRUSTOTAL_LIVEHUNT_NOTIFICATIONS_INTERVAL_SEC' and 'CONNECTOR_DURATION_PERIOD' are set. "
-                    "'CONNECTOR_DURATION_PERIOD' will take precedence."
-                )
-            else:
-                warnings.warn(
-                    "Env var 'VIRUSTOTAL_LIVEHUNT_NOTIFICATIONS_INTERVAL_SEC' is deprecated. "
-                    "Use 'CONNECTOR_DURATION_PERIOD' instead."
-                )
-                connector_data["duration_period"] = timedelta(seconds=int(interval))
-
-        return data

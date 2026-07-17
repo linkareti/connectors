@@ -2,6 +2,24 @@
 
 __version__ = "0.1.0"
 
+from connectors_sdk.client.base_client_api import BaseClientApi
+from connectors_sdk.client.exceptions import (
+    ApiClientError,
+    ApiForbiddenError,
+    ApiNotFoundError,
+    ApiRateLimitError,
+    ApiServerError,
+    ApiUnauthorizedError,
+)
+from connectors_sdk.client.rate_limit import RateLimit
+from connectors_sdk.connectors.external_import._work_manager import WorkManager
+from connectors_sdk.connectors.external_import.base_data_processor import (
+    BaseDataProcessor,
+)
+from connectors_sdk.connectors.external_import.external_import_connector import (
+    ExternalImportConnector,
+)
+from connectors_sdk.connectors.external_import.logger import ConnectorLogger
 from connectors_sdk.settings.annotated_types import (
     DatetimeFromIsoString,
     ListFromString,
@@ -26,6 +44,15 @@ from connectors_sdk.settings.exceptions import (
 from connectors_sdk.states.states import ExternalImportConnectorState
 
 __all__ = [
+    # HTTP Client
+    "BaseClientApi",
+    "RateLimit",
+    "ApiClientError",
+    "ApiForbiddenError",
+    "ApiNotFoundError",
+    "ApiRateLimitError",
+    "ApiServerError",
+    "ApiUnauthorizedError",
     # Base Settings
     "BaseConnectorSettings",
     # Base Configs
@@ -46,4 +73,9 @@ __all__ = [
     "DeprecatedField",
     # Connector States
     "ExternalImportConnectorState",
+    # Connector base classes
+    "ExternalImportConnector",
+    "ConnectorLogger",
+    "BaseDataProcessor",
+    "WorkManager",
 ]

@@ -83,11 +83,12 @@ class OrchestratorCampaign(BaseOrchestrator):
             "attack_techniques",
             "vulnerabilities",
             "threat_actors",
+            "domains",
+            "files",
+            "urls",
+            "ip_addresses",
+            "software_toolkits",
             # "reports",
-            # "domains",
-            # "files",
-            # "urls",
-            # "ip_addresses",
         ]
         try:
             async for gti_campaigns in self.client_api.fetch_campaigns(initial_state):
@@ -100,7 +101,9 @@ class OrchestratorCampaign(BaseOrchestrator):
                     subentities = await self.client_api.fetch_subentities(
                         entity_name="entity_id",
                         entity_id=campaign.id,
-                        subentity_types=subentity_types,
+                        subentity_types=self._filter_subentity_types(
+                            subentity_types, campaign
+                        ),
                     )
 
                     rel_summary = ", ".join(
