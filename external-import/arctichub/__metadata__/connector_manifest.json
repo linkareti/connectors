@@ -1,0 +1,21 @@
+{
+  "title": "Arctic Hub",
+  "slug": "arctichub",
+  "description": "Arctic Hub ingests threat intelligence and customer/event data from the Arctic Security API (CERT-BE) into OpenCTI. Customers are processed individually, each producing its own STIX bundle to limit memory usage. Optionally, IPv4/IPv6 CIDR ranges can be expanded into individual host observables, and security event ingestion can be enabled in addition to the default customer data ingestion.",
+  "short_description": "Ingests customer and event threat intelligence data from the Arctic Security API into OpenCTI.",
+  "logo": null,
+  "use_cases": [
+    "Open Source Threat Intel"
+  ],
+  "verified": false,
+  "last_verified_date": null,
+  "playbook_supported": false,
+  "max_confidence_level": 50,
+  "support_version": null,
+  "subscription_link": null,
+  "source_code": "https://github.com/linkareti/connectors/tree/develop/external-import/arctichub",
+  "manager_supported": true,
+  "container_version": "rolling",
+  "container_image": null,
+  "container_type": "EXTERNAL_IMPORT"
+}
