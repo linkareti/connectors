@@ -5,7 +5,7 @@ import time
 import requests
 import urllib3
 import validators
-from pycti import OpenCTIApiClient, OpenCTIConnectorHelper
+from pycti import OpenCTIConnectorHelper
 from stream_connector.utils import obfuscate_api_key, sanitize_payload
 from tenacity import (
     retry,
@@ -20,21 +20,17 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 class ZscalerConnector:
     def __init__(
         self,
-        config_path,
         helper: OpenCTIConnectorHelper,
-        opencti_url,
-        opencti_token,
         ssl_verify,
         zscaler_username,
         zscaler_password,
         zscaler_api_key,
+        zscaler_api_base_url,
         zscaler_blacklist_name,
     ):
         self.helper = helper
         self.helper.connector_logger.info("Initializing Zscaler connector...")
 
-        self.opencti_url = opencti_url
-        self.opencti_token = opencti_token
         self.ssl_verify = ssl_verify
         self.zscaler_username = zscaler_username
         self.zscaler_password = zscaler_password
@@ -43,11 +39,7 @@ class ZscalerConnector:
             zscaler_blacklist_name  # Parameter for the blacklist
         )
 
-        self.api = OpenCTIApiClient(
-            self.opencti_url, self.opencti_token, ssl_verify=self.ssl_verify
-        )
-
-        self.zscaler_base_url = "https://zsapi.zscalertwo.net/api/v1"
+        self.zscaler_base_url = f"{str(zscaler_api_base_url).rstrip('/')}/api/v1"
         self.session = requests.Session()
 
         self.rate_limit = 400  # Limit to 400 requests per hour

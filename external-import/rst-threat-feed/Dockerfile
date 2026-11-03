@@ -5,12 +5,11 @@ ENV CONNECTOR_TYPE=EXTERNAL_IMPORT
 COPY src /opt/opencti-connector-threatfeed
 
 # Install dependencies
-RUN apk --no-cache add git build-base libmagic && \
+RUN apk --no-cache upgrade && \
+    apk --no-cache add git build-base libmagic && \
     cd /opt/opencti-connector-threatfeed && \
     pip3 install --no-cache-dir -r requirements.txt && \
     apk del git build-base
 
-# Expose and entrypoint
-COPY entrypoint.sh /
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
+WORKDIR /opt/opencti-connector-threatfeed
+CMD ["python3", "main.py"]

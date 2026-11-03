@@ -13,6 +13,7 @@ connector:
   #live_stream_no_dependencies: true
 
 microsoft_sentinel_intel:
+  #auth_type: 'azure_credential' # Use managed identity, workload identity, or az login instead of app registration
   tenant_id: 'ChangeMe'
   client_id: 'ChangeMe'
   client_secret: 'ChangeMe'
@@ -22,6 +23,7 @@ microsoft_sentinel_intel:
 #  resource_group: 'default' # For deletion
 #  source_system: 'Opencti Stream Connector'
 #  delete_extensions: True
+#  use_score_as_confidence: false
 #  extra_labels: 'label1,label2'
 #  workspace_api_version: '2024-02-01-preview'
 #  management_api_version: '2025-03-01'

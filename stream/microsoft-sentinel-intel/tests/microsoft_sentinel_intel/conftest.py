@@ -65,6 +65,34 @@ def fixture_mock_microsoft_sentinel_intel_config(
     mocker.patch("os.environ", environ)
 
 
+@pytest.fixture(name="microsoft_sentinel_intel_azure_credential_config_dict")
+def fixture_microsoft_sentinel_intel_azure_credential_config_dict(
+    microsoft_sentinel_intel_config_dict: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    config = deepcopy(microsoft_sentinel_intel_config_dict)
+    config["microsoft_sentinel_intel"]["auth_type"] = "azure_credential"
+    del config["microsoft_sentinel_intel"]["tenant_id"]
+    del config["microsoft_sentinel_intel"]["client_id"]
+    del config["microsoft_sentinel_intel"]["client_secret"]
+    return config
+
+
+@pytest.fixture(name="mock_microsoft_sentinel_intel_azure_credential_config")
+def fixture_mock_microsoft_sentinel_intel_azure_credential_config(
+    mocker: MockerFixture,
+    microsoft_sentinel_intel_azure_credential_config_dict: dict[str, dict[str, Any]],
+) -> None:
+    ConnectorSettings.model_config["yaml_file"] = ""
+    ConnectorSettings.model_config["env_file"] = ""
+
+    environ = deepcopy(os.environ)
+    for key, value in microsoft_sentinel_intel_azure_credential_config_dict.items():
+        for sub_key, sub_value in value.items():
+            if sub_value is not None:
+                environ[f"{key.upper()}_{sub_key.upper()}"] = str(sub_value)
+    mocker.patch("os.environ", environ)
+
+
 @pytest.fixture(name="microsoft_sentinel_intel_batch_config_dict")
 def fixture_microsoft_sentinel_intel_batch_config_dict(
     microsoft_sentinel_intel_config_dict: dict[str, dict[str, Any]],
@@ -98,6 +126,15 @@ def _make_config_with_event_types(
 ) -> dict[str, dict[str, Any]]:
     config = deepcopy(base_config)
     config["microsoft_sentinel_intel"]["event_types"] = event_types
+    return config
+
+
+def _make_config_with_overrides(
+    base_config: dict[str, dict[str, Any]],
+    **overrides: Any,
+) -> dict[str, dict[str, Any]]:
+    config = deepcopy(base_config)
+    config["microsoft_sentinel_intel"].update(overrides)
     return config
 
 
@@ -205,3 +242,46 @@ def fixture_mock_microsoft_sentinel_intel_batch_create_only_config(
     microsoft_sentinel_intel_batch_create_only_config_dict: dict[str, dict[str, Any]],
 ) -> None:
     _mock_config_environ(mocker, microsoft_sentinel_intel_batch_create_only_config_dict)
+
+
+@pytest.fixture(name="mock_microsoft_sentinel_intel_score_as_confidence_config")
+def fixture_mock_microsoft_sentinel_intel_score_as_confidence_config(
+    mocker: MockerFixture,
+    microsoft_sentinel_intel_config_dict: dict[str, dict[str, Any]],
+) -> None:
+    _mock_config_environ(
+        mocker,
+        _make_config_with_overrides(
+            microsoft_sentinel_intel_config_dict, use_score_as_confidence=True
+        ),
+    )
+
+
+@pytest.fixture(
+    name="mock_microsoft_sentinel_intel_score_as_confidence_keep_extensions_config"
+)
+def fixture_mock_microsoft_sentinel_intel_score_as_confidence_keep_extensions_config(
+    mocker: MockerFixture,
+    microsoft_sentinel_intel_config_dict: dict[str, dict[str, Any]],
+) -> None:
+    _mock_config_environ(
+        mocker,
+        _make_config_with_overrides(
+            microsoft_sentinel_intel_config_dict,
+            use_score_as_confidence=True,
+            delete_extensions=False,
+        ),
+    )
+
+
+@pytest.fixture(name="mock_microsoft_sentinel_intel_batch_score_as_confidence_config")
+def fixture_mock_microsoft_sentinel_intel_batch_score_as_confidence_config(
+    mocker: MockerFixture,
+    microsoft_sentinel_intel_batch_config_dict: dict[str, dict[str, Any]],
+) -> None:
+    _mock_config_environ(
+        mocker,
+        _make_config_with_overrides(
+            microsoft_sentinel_intel_batch_config_dict, use_score_as_confidence=True
+        ),
+    )

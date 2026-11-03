@@ -14,24 +14,22 @@ from stream_connector import connector as zscaler
 def mock_obfuscate(monkeypatch):
     """Mock obfuscate_api_key to return a dummy string."""
     monkeypatch.setattr(
-        "stream_connector.utils.obfuscate_api_key",
+        "stream_connector.connector.obfuscate_api_key",
         lambda api_key, timestamp: "dummy-obfuscated",
     )
 
 
 @pytest.fixture
-def connector(helper_mock, mock_config, mock_session, mock_opencti_client):
-    """Provide a ZscalerConnector instance with mocked config, session and OpenCTI client"""
+def connector(helper_mock, mock_config, mock_session):
+    """Provide a ZscalerConnector instance with mocked config and session"""
 
     zscaler_connector = zscaler.ZscalerConnector(
-        config_path=None,
         helper=helper_mock,
-        opencti_url=mock_config.opencti.url,
-        opencti_token=mock_config.opencti.token,
         ssl_verify=mock_config.ssl_verify,
         zscaler_username=mock_config.zscaler.username,
         zscaler_password=mock_config.zscaler.password,
         zscaler_api_key=mock_config.zscaler.api_key,
+        zscaler_api_base_url=mock_config.zscaler.api_base_url,
         zscaler_blacklist_name=mock_config.zscaler.blacklist_name,
     )
     zscaler_connector.session = mock_session
@@ -48,20 +46,9 @@ def mock_config():
     mock.zscaler.username = "user"
     mock.zscaler.password = "pass"
     mock.zscaler.api_key = "api-key"
+    mock.zscaler.api_base_url = "https://zsapi.example.com/"
     mock.zscaler.blacklist_name = "blacklist"
     return mock
-
-
-@pytest.fixture
-def mock_opencti_client(monkeypatch):
-    mock_client = Mock()
-    mock_client.health_check.return_value = True
-
-    monkeypatch.setattr(
-        zscaler, "OpenCTIApiClient", lambda *args, **kwargs: mock_client
-    )
-
-    return mock_client
 
 
 @pytest.fixture

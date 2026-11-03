@@ -5,7 +5,7 @@ COPY src /opt/opencti-connector-cofense-threathq
 
 # Install Python modules
 # hadolint ignore=DL3003
-RUN apk update && apk upgrade && \
+RUN apk --no-cache upgrade && \
     apk --no-cache add git build-base libmagic libffi-dev libxml2-dev libxslt-dev
 
 RUN cd /opt/opencti-connector-cofense-threathq && \
@@ -13,7 +13,6 @@ RUN cd /opt/opencti-connector-cofense-threathq && \
     apk del git build-base && \
     rm -rf /var/cache/apk/*
 
-# Expose and entrypoint
-COPY entrypoint.sh /
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
+WORKDIR /opt/opencti-connector-cofense-threathq
+
+CMD ["python3", "main.py"]

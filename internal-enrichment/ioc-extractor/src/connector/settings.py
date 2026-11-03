@@ -2,6 +2,7 @@ from connectors_sdk import (
     BaseConfigModel,
     BaseConnectorSettings,
     BaseInternalEnrichmentConnectorConfig,
+    DeprecatedField,
     ListFromString,
 )
 from pydantic import Field
@@ -31,6 +32,12 @@ class IOCExtractorConfig(BaseConfigModel):
     skip_private_ips: bool = Field(
         description="Skip private/reserved IP addresses (RFC 1918, loopback, etc.).",
         default=True,
+    )
+    max_tlp: str | None = DeprecatedField(
+        deprecated="Use 'CONNECTOR_MAX_TLP' in the 'connector' section instead.",
+        new_namespace="connector",
+        new_namespaced_var="max_tlp",
+        description="The maximal TLP of the observable being enriched.",
     )
 
 

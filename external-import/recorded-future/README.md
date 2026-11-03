@@ -73,8 +73,9 @@ There are a number of configuration options, which are set either in `docker-com
 | Person to Threat Actor                  | recorded_future.person_to_ta                   | `RECORDED_FUTURE_PERSON_TO_TA`                            | false               | No        | Convert person entities to threat actors.                                   |
 | Threat Actor to Intrusion Set           | recorded_future.ta_to_intrusion_set            | `RECORDED_FUTURE_TA_TO_INTRUSION_SET`                     | false               | No        | When true, maps all Threat Actor entities to Intrusion Sets.               |
 | Risk as Score                           | recorded_future.risk_as_score                  | `RECORDED_FUTURE_RISK_AS_SCORE`                           | true                | No        | Use RF risk score as OpenCTI score.                                         |
-| Risk Threshold                          | recorded_future.risk_threshold                 | `RECORDED_FUTURE_RISK_THRESHOLD`                          | 60                  | No        | Minimum risk score for import.                                              |
+| Risk Threshold                          | recorded_future.risk_threshold                 | `RECORDED_FUTURE_RISK_THRESHOLD`                          | 60                  | No        | Minimum risk score (0-100) of the Analyst Notes indicators (IP, domain, URL, hash). Lower or unscored indicators are skipped. `0` disables the filtering. |
 | Analyst Notes Guess Relationships       | recorded_future.analyst_notes_guess_relationships | `RECORDED_FUTURE_ANALYST_NOTES_GUESS_RELATIONSHIPS`    | false               | No        | Infer relationships from notes.                                             |
+| Analyst Notes Include Context Entities  | recorded_future.analyst_notes_include_context_entities | `RECORDED_FUTURE_ANALYST_NOTES_INCLUDE_CONTEXT_ENTITIES` | false     | No        | Also import entities referenced only in a note's context (can be noisy).    |
 | Pull Risk List                          | recorded_future.pull_risk_list                 | `RECORDED_FUTURE_PULL_RISK_LIST`                          | false               | No        | Import risk list data.                                                      |
 | Risk Rules as Label                     | recorded_future.riskrules_as_label             | `RECORDED_FUTURE_RISKRULES_AS_LABEL`                      | false               | No        | Convert risk rules to labels.                                               |
 | Risk List Threshold                     | recorded_future.risk_list_threshold            | `RECORDED_FUTURE_RISK_LIST_THRESHOLD`                     | 70                  | No        | Minimum score for risk list import.                                         |
@@ -212,8 +213,8 @@ _insikt_only: True_
 Each Analyst Note is converted into a STIX2 report. The report contains STIX2 SDOs that are converted as per below
 
 - Note Title and Content -> STIX2 report content
-- Topic-> STIX2 report labels
-- Validation Urls -> STIX2 report external references
+- Topic -> STIX2 report labels
+- Validation URLs -> STIX2 report external references
 - Note Entities -> Indicator, Observables, Threat Actors or other corresponding SDOs
 - Detection Rules -> Indicators
 
@@ -235,7 +236,55 @@ For Note entities, the following Recorded Future Entity types are supported:
 - Campaign
 - Threat Actor
 
-The context have been added now following the relationships below:
+> **Note — Primary vs Related entities.**
+>
+> In the Recorded Future portal, an Analyst Note separates its entities into two categories:
+>
+> - Primary Entities: "Entities directly involved or targeted in the reported activity".
+> - Related Entities: "Associated, but not directly involved in the reported activity".
+>
+> This connector **only imports the Primary Entities**. The Related entities are intentionally
+> not ingested, because entities that are merely *associated* — not directly involved —
+> carry a high risk of false positives.
+>
+> As a result, a Report created in OpenCTI may contain fewer entities than the same note shows
+> in the Recorded Future portal — this is expected behavior, not a bug.
+
+> **Note — Risk threshold filtering.**
+>
+> The `risk_threshold` parameter (`RECORDED_FUTURE_RISK_THRESHOLD`) applies to the indicators
+> of Analyst Notes only (IP address, domain, URL and hash). Risk lists use `risk_list_threshold`.
+>
+> - It is active by default, with a value of `60`: when the parameter is not set, indicators are filtered.
+> - An indicator whose risk score is below the threshold, or which has no risk score in Recorded
+>   Future (unknown to the risk API), is not imported. As a result, a Report created in OpenCTI
+>   may contain fewer indicators than the same note shows in the Recorded Future portal.
+> - The risk score is read each time the note is processed, that is on every run while the note
+>   is within the `last_published_notes` hours window (the first run uses the initial lookback).
+>   After that the note is not processed again, so a later change of the score is not picked up:
+>   an indicator skipped at that time is not imported afterwards from that note (see the
+>   Recorded Future
+>   [Risk History API](https://support.recordedfuture.com/hc/en-us/articles/37383892573459-Risk-History-API)
+>   for the history of a risk score).
+> - Each skipped indicator is logged at `info` level, with the note id, the indicator, its type,
+>   its risk score and the threshold. Set `CONNECTOR_LOG_LEVEL` to `info` or `debug` to see these logs.
+> - Set the threshold to `0` to disable the filtering and import all indicators, including those
+>   with a risk score of 0 or without any risk score. In that case, the risk score is only
+>   requested from Recorded Future when `risk_as_score` is `true`.
+> - An empty `RECORDED_FUTURE_RISK_THRESHOLD` environment variable is ignored and keeps the default
+>   `60`, whereas a `risk_threshold:` key left without a value, or set to `null`, in `config.yml`
+>   disables the filtering, like `0` (a quoted empty string `''` is not `null` and fails validation).
+>
+> **Warning — risk score of 0.** A Recorded Future risk score of 0 is sent as an OpenCTI score of 0
+> (previously no score was sent and the platform defaulted to 50). With indicator decay enabled,
+> such indicators are revoked at creation, since 0 is at or below the decay revoke score. This
+> applies to Analyst Notes indicators with `risk_as_score` enabled and a threshold of `0` or `null`,
+> and to risk lists with a `null` `risk_list_threshold`. An empty or non-numeric `Risk` value in a
+> risk list sends no score. A later import of the same indicator without a score (`risk_as_score`
+> turned off, or a score the risk API no longer returns) resets its score to the platform default
+> of 50 and un-revokes it.
+
+The connector creates the following relationships between imported entities:
 
 ![mapping relationships](./__docs__/media/mapping-relationships.png)
 
@@ -298,7 +347,7 @@ For example, if you want to perform an investigation on an indicator:
 
 Risk Lists and Analyst Notes can be retrieved simultaneously by the connector.
 
-Give a value for the `risk_list_interval` (config.yml for local deployment) or `RECORDED_FUTURE_RISK_LIST_INTERVAL` (docker-compose.yml file for deployment with Docker containers) allows you to pull Risk Lists at regular intervals. NB: Risk Lists are updated every 12 hours by RecordedFuture, so there is no benefit in fetching them more frequently than that.
+Setting `risk_list_interval` (config.yml for local deployment) or `RECORDED_FUTURE_RISK_LIST_INTERVAL` (docker-compose.yml for deployment with Docker containers) allows you to pull Risk Lists at regular intervals. NB: Risk Lists are updated every 12 hours by Recorded Future, so there is no benefit in fetching them more frequently than that.
 
 #### Verification
 
@@ -324,7 +373,7 @@ Give a value for the `threat_maps_interval` (config.yml for local deployment) or
 
 The connector will import all Malware and Threat Actors with their context.
 
-Threat Actors will be registered as in `Intrusion Set`.
+Threat Actors will be registered as `Intrusion Set` entities.
 
 Example of result for an Intrusion Set:
 
@@ -370,7 +419,7 @@ Check your Alerting Rules activation
 
 And if you want to have priority alerts, you need to check the box
 
-![priority alerts](./__docs__/media/rf-priority-alerts.png)]
+![priority alerts](./__docs__/media/rf-priority-alerts.png)
 
 #### Initial population
 

@@ -42,19 +42,13 @@ class _ConfigLoaderConnector(ConfigBaseSettings):
         description="The scope or type of data the connector is processing.",
     )
 
-    type: str = Field(
+    type: Literal["STREAM"] = Field(
         default="STREAM",
         description="Should always be set to STREAM for this connector.",
     )
     log_level: LogLevelToLower = Field(
         default="info",
         description="Determines the verbosity of the logs.",
-    )
-    confidence_level: int = Field(
-        default=100,
-        ge=0,
-        le=100,
-        description="The default confidence level for created entities (0-100).",
     )
 
     # Stream-specific configuration

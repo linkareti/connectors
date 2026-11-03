@@ -7,13 +7,14 @@ Below is an exhaustive enumeration of all configurable parameters available, eac
 | Property | Type | Required | Possible values | Default | Description |
 | -------- | ---- | -------- | --------------- | ------- | ----------- |
 | OPENCTI_URL | `string` | ✅ | Format: [`uri`](https://json-schema.org/understanding-json-schema/reference/string#built-in-formats) |  | The base URL of the OpenCTI instance. |
-| OPENCTI_TOKEN | `string` | ✅ | string |  | The API token to connect to OpenCTI. |
+| OPENCTI_TOKEN | `string` | ✅ | Format: [`password`](https://json-schema.org/understanding-json-schema/reference/string#built-in-formats) |  | The API token to connect to OpenCTI. |
 | JOE_SANDBOX_API_KEY | `string` | ✅ | Format: [`password`](https://json-schema.org/understanding-json-schema/reference/string#built-in-formats) |  | The API key for Joe Sandbox |
 | CONNECTOR_NAME | `string` |  | string | `"Joe Sandbox"` | The name of the connector. |
 | CONNECTOR_SCOPE | `array` |  | string | `["Artifact", "Url"]` | The scope of the connector, i.e., the types of entities the connector can enrich. |
 | CONNECTOR_LOG_LEVEL | `string` |  | `debug` `info` `warn` `warning` `error` | `"error"` | The minimum level of logs to display. |
 | CONNECTOR_TYPE | `const` |  | `INTERNAL_ENRICHMENT` | `"INTERNAL_ENRICHMENT"` |  |
 | CONNECTOR_AUTO | `boolean` |  | boolean | `false` | Whether the connector should run automatically when an entity is created or updated. |
+| CONNECTOR_MAX_TLP | `string` |  | `clear` `white` `green` `amber` `amber+strict` `red` | `"red"` | The highest TLP of the entities the connector is allowed to enrich. Entities marked with a higher TLP are skipped and never sent to the external source. |
 | JOE_SANDBOX_REPORT_TYPES | `string` |  | string | `"executive,html,iochtml,iocjson,iocxml,unpackpe,stix,ida,pdf,pdfexecutive,misp,pcap,maec,memdumps,json,lightjsonfixed,xml,lightxml,pcapunified,pcapsslinspection"` | Download/upload as external ref files for these report types. json/xml are only allowed to be used with Joe Sandbox Cloud Pro |
 | JOE_SANDBOX_API_URL | `string` |  | string | `"https://jbxcloud.joesecurity.org/api"` | Cloud Pro: https://jbxcloud.joesecurity.org/api, Cloud Basic: https://joesandbox.com/api |
 | JOE_SANDBOX_ANALYSIS_URL | `string` |  | string | `"https://jbxcloud.joesecurity.org/analysis"` | Cloud Pro: https://jbxcloud.joesecurity.org/analysis, Cloud Basic: https://joesandbox.com/analysis |

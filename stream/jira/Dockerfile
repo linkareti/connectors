@@ -6,12 +6,13 @@ COPY src /opt/opencti-connector-jira
 
 # Install Python modules
 # hadolint ignore=DL3003
-RUN apk --no-cache add git build-base libmagic libffi-dev libxml2-dev libxslt-dev && \
+RUN apk --no-cache upgrade && \
+    apk --no-cache add git build-base libmagic libffi-dev libxml2-dev libxslt-dev && \
     cd /opt/opencti-connector-jira && \
     pip3 install --no-cache-dir -r requirements.txt && \
     apk del git build-base
 
-# Expose and entrypoint
-COPY entrypoint.sh /
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
+WORKDIR /opt/opencti-connector-jira
+
+# Start the connector
+CMD ["python3", "main.py"]
